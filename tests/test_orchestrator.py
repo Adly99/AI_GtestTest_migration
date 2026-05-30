@@ -117,5 +117,49 @@ class TestOrchestrator(unittest.TestCase):
         # The list of files that would be generated is still populated in the returned result
         self.assertTrue(len(result["generated_files"]) > 0)
 
+    def test_run_pipeline_with_cpp_source(self):
+        # Create a header file and corresponding implementation file in the project
+        header_path = os.path.join(self.project_root, "Account.h")
+        cpp_path = os.path.join(self.project_root, "Account.cpp")
+        
+        header_content = """
+        class Account {
+        public:
+            virtual bool Deposit(double amount) = 0;
+        };
+        """
+        cpp_content = """
+        #include "Account.h"
+        bool Account::Deposit(double amount) {
+            if (amount <= 0) {
+                return false;
+            }
+            return true;
+        }
+        """
+        
+        with open(header_path, "w", encoding="utf-8") as f:
+            f.write(header_content)
+        with open(cpp_path, "w", encoding="utf-8") as f:
+            f.write(cpp_content)
+            
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=header_path,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        fixture_file = os.path.join(self.output_dir, "test_Account.cpp")
+        self.assertTrue(os.path.exists(fixture_file))
+        
+        with open(fixture_file, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        # Assert that concrete test scenarios were generated instead of placeholders
+        self.assertIn("TEST_F(AccountTest, Deposit_Success_DefaultBehavior)", content)
+        self.assertIn("TEST_F(AccountTest, Deposit_EdgeCase_amountZeroOrLess)", content)
+
 if __name__ == "__main__":
     unittest.main()

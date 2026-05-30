@@ -182,11 +182,20 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                 
             fixture_path = os.path.join(output_dir, fixture_name)
             
+            header_no_ext = os.path.splitext(header)[0]
+            cpp_file_path = None
+            for cpp_ext in (".cpp", ".cc", ".cxx", ".c++"):
+                cand = header_no_ext + cpp_ext
+                if os.path.exists(cand):
+                    cpp_file_path = cand
+                    break
+
             fixture_content = generate_test_fixture(
                 cpp_class, 
                 mock_hdr_path, 
                 basename, 
-                keep_class_name=keep_class_name
+                keep_class_name=keep_class_name,
+                cpp_file_path=cpp_file_path
             )
 
             if not dry_run:

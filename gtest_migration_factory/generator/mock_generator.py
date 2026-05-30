@@ -526,10 +526,13 @@ def generate_mock_header(cpp_class, original_header_name, keep_class_name=False)
     ast.classes.append(cpp_class)
     return generate_mock_header_from_ast(ast, original_header_name, keep_class_name)
 
-def generate_test_fixture(cpp_class, mock_header_path, original_header_name, keep_class_name=False):
+def generate_test_fixture(cpp_class, mock_header_path, original_header_name, keep_class_name=False, cpp_file_path=None):
     """
     Generates a standard GTest unit test fixture file string.
     """
+    from ..parser.bbrainy_gtest import analyze_cpp_file
+    from .unit_test_converter import convert_scenarios_to_gtest
+
     mock_class_name = cpp_class.name if keep_class_name else f"Mock{cpp_class.name}"
     full_original_name = cpp_class.name
     full_mock_name = mock_class_name
@@ -554,6 +557,7 @@ def generate_test_fixture(cpp_class, mock_header_path, original_header_name, kee
     lines.append("using ::testing::Eq;")
     lines.append("using ::testing::Ne;")
     lines.append("using ::testing::_;")
+    lines.append("using ::testing::EXPECT_THAT;")
     lines.append("")
     
     # Test Fixture Class
@@ -570,18 +574,23 @@ def generate_test_fixture(cpp_class, mock_header_path, original_header_name, kee
     lines.append("};")
     lines.append("")
     
-    # Placeholder Test Case
-    lines.append(f"TEST_F({fixture_name}, DefaultConstructorBehavior) {{")
-    lines.append("    // Arrange")
-    if keep_class_name:
-        lines.append(f"    // {full_mock_name} represents the stub class itself")
-        lines.append(f"    {full_mock_name} stub_instance;")
+    # Generate test cases using Unit Test Converter
+    scenarios = analyze_cpp_file(cpp_file_path, cpp_class)
+    test_cases_str = ""
+    if scenarios:
+        test_cases_str = convert_scenarios_to_gtest(scenarios, cpp_class.name, full_mock_name)
     else:
-        lines.append(f"    // Mock instance for verification")
-        lines.append(f"    {full_mock_name} mock_instance;")
-    lines.append("")
-    lines.append("    // Act & Assert placeholders")
-    lines.append("    EXPECT_TRUE(true);")
-    lines.append("}")
+        # Fallback placeholder test
+        fallback_lines = []
+        fallback_lines.append(f"TEST_F({fixture_name}, DefaultConstructorBehavior) {{")
+        fallback_lines.append("    // Arrange")
+        fallback_lines.append(f"    {full_mock_name} mock_instance;")
+        fallback_lines.append("")
+        fallback_lines.append("    // Act & Assert placeholders")
+        fallback_lines.append("    EXPECT_TRUE(true);")
+        fallback_lines.append("}")
+        test_cases_str = "\n".join(fallback_lines) + "\n"
+        
+    lines.append(test_cases_str)
     
     return "\n".join(lines) + "\n"
