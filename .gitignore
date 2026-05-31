@@ -27,3 +27,4 @@ Thumbs.db
 temp/
 tmp/
 .gtest_factory_config.json
+googletest/

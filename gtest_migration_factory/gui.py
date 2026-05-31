@@ -416,37 +416,80 @@ class GTestMigrationGUI:
         preview_scrollbar.pack(fill=tk.Y, side=tk.RIGHT)
         self.preview_text.configure(yscrollcommand=preview_scrollbar.set)
 
-        # ----------------------------------------------------
-        # 6. RUN BUTTONS & STATUS
-        # ----------------------------------------------------
-        bottom_frame = ttk.Frame(main_container)
-        bottom_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=4)
+        # Tab 3: GoogleTest Builder Frame
+        gtest_build_frame = ttk.Frame(self.notebook)
+        self.notebook.add(gtest_build_frame, text=" GoogleTest Builder ")
 
-        self.status_label = tk.Label(
-            bottom_frame, 
-            text="Status: Ready", 
-            bg=BG_COLOR, 
+        gtest_top_frame = ttk.Frame(gtest_build_frame)
+        gtest_top_frame.pack(fill=tk.X, pady=5, padx=5)
+
+        # Row 0: C++ Standard & Environment
+        ttk.Label(gtest_top_frame, text="C++ Standard:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.gtest_cxx_var = tk.StringVar(value="Auto-detect")
+        gtest_cxx_dropdown = ttk.Combobox(
+            gtest_top_frame, 
+            textvariable=self.gtest_cxx_var, 
+            values=["Auto-detect", "11", "14", "17", "20"],
+            state="readonly",
+            width=12
+        )
+        gtest_cxx_dropdown.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(gtest_top_frame, text="Build Environment:").grid(row=0, column=2, sticky=tk.W, padx=15, pady=2)
+        self.gtest_env_var = tk.StringVar(value="Windows CMD")
+        gtest_env_dropdown = ttk.Combobox(
+            gtest_top_frame, 
+            textvariable=self.gtest_env_var, 
+            values=["Windows CMD", "WSL (Linux)"],
+            state="readonly",
+            width=15
+        )
+        gtest_env_dropdown.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        # Row 1: Action buttons
+        gtest_btns_frame = ttk.Frame(gtest_top_frame)
+        gtest_btns_frame.grid(row=1, column=0, columnspan=4, sticky=tk.EW, pady=5)
+
+        self.gtest_checkout_btn = ttk.Button(
+            gtest_btns_frame,
+            text="Git Checkout Version",
+            command=self.checkout_gtest
+        )
+        self.gtest_checkout_btn.pack(side=tk.LEFT, padx=5)
+
+        self.gtest_build_btn = ttk.Button(
+            gtest_btns_frame,
+            text="Build Libraries",
+            command=self.start_gtest_build
+        )
+        self.gtest_build_btn.pack(side=tk.LEFT, padx=5)
+
+        self.gtest_cmake_btn = ttk.Button(
+            gtest_btns_frame,
+            text="Generate CMake FetchContent",
+            command=self.generate_gtest_cmake
+        )
+        self.gtest_cmake_btn.pack(side=tk.LEFT, padx=5)
+
+        # Bottom Frame: Log textbox
+        gtest_bottom_frame = ttk.Frame(gtest_build_frame)
+        gtest_bottom_frame.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
+
+        self.gtest_log_text = tk.Text(
+            gtest_bottom_frame,
+            bg=SURFACE_COLOR,
             fg=TEXT_COLOR,
-            font=("Arial", 10, "bold")
+            insertbackground=TEXT_COLOR,
+            relief=tk.FLAT,
+            state='disabled',
+            font=("Consolas", 10),
+            padx=10,
+            pady=10
         )
-        self.status_label.pack(side=tk.LEFT, padx=10)
-
-        # Execute Migration Button
-        self.run_button = ttk.Button(
-            bottom_frame, 
-            text="Execute Migration", 
-            style="Run.TButton",
-            command=self.execute_pipeline
-        )
-        self.run_button.pack(side=tk.RIGHT, padx=5)
-
-        # Preview Mock Button
-        self.preview_button = ttk.Button(
-            bottom_frame,
-            text="Preview Mock",
-            command=self.preview_mock
-        )
-        self.preview_button.pack(side=tk.RIGHT, padx=5)
+        self.gtest_log_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        gtest_scrollbar = ttk.Scrollbar(gtest_bottom_frame, command=self.gtest_log_text.yview)
+        gtest_scrollbar.pack(fill=tk.Y, side=tk.RIGHT)
+        self.gtest_log_text.configure(yscrollcommand=gtest_scrollbar.set)
 
     def on_target_mode_changed(self):
         mode = self.target_mode_var.get()
@@ -743,6 +786,196 @@ class GTestMigrationGUI:
         except Exception:
             pass
         self.root.destroy()
+
+    def append_gtest_log(self, text):
+        self.gtest_log_text.configure(state='normal')
+        self.gtest_log_text.insert(tk.END, text)
+        self.gtest_log_text.see(tk.END)
+        self.gtest_log_text.configure(state='disabled')
+        self.root.update_idletasks()
+
+    def checkout_gtest(self):
+        import subprocess
+        self.gtest_log_text.configure(state='normal')
+        self.gtest_log_text.delete(1.0, tk.END)
+        self.gtest_log_text.configure(state='disabled')
+        
+        try:
+            cxx_std = self.gtest_cxx_var.get()
+            if cxx_std == "Auto-detect":
+                from .parser.cxx_standard_detector import detect_cxx_standard
+                cxx_std = detect_cxx_standard(self.project_root_var.get())
+            cxx_std = cxx_std or "17"
+            tag, commit = get_gtest_release_info(cxx_std)
+            
+            gtest_path = os.path.join(os.getcwd(), "googletest")
+            if not os.path.exists(gtest_path):
+                raise FileNotFoundError(f"GoogleTest repository directory not found at: {gtest_path}")
+                
+            self.append_gtest_log(f"[GTest Builder] Checking out tag: {tag} (Commit: {commit[:7]}) for C++{cxx_std}...\n")
+            git_proc = subprocess.run(
+                ["git", "checkout", tag],
+                cwd=gtest_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if git_proc.returncode != 0:
+                self.append_gtest_log(f"[Warning] Git checkout message:\n{git_proc.stderr}\n")
+            else:
+                self.append_gtest_log(f"[GTest Builder] Successfully checked out GoogleTest {tag}!\n")
+        except Exception as e:
+            self.append_gtest_log(f"[Error]: {e}\n")
+
+    def start_gtest_build(self):
+        import threading
+        thread = threading.Thread(target=self.run_gtest_build)
+        thread.daemon = True
+        thread.start()
+
+    def run_gtest_build(self):
+        import subprocess
+        
+        self.run_button.configure(state="disabled")
+        self.preview_button.configure(state="disabled")
+        self.gtest_checkout_btn.configure(state="disabled")
+        self.gtest_build_btn.configure(state="disabled")
+        self.gtest_cmake_btn.configure(state="disabled")
+        
+        self.gtest_log_text.configure(state='normal')
+        self.gtest_log_text.delete(1.0, tk.END)
+        self.gtest_log_text.configure(state='disabled')
+        
+        try:
+            # 1. Resolve standard
+            cxx_std = self.gtest_cxx_var.get()
+            if cxx_std == "Auto-detect":
+                from .parser.cxx_standard_detector import detect_cxx_standard
+                cxx_std = detect_cxx_standard(self.project_root_var.get())
+            cxx_std = cxx_std or "17"
+            self.append_gtest_log(f"[GTest Builder] Targeting C++{cxx_std}\n")
+                
+            # 2. Get tag/commit
+            tag, commit = get_gtest_release_info(cxx_std)
+            self.append_gtest_log(f"[GTest Builder] Standard C++{cxx_std} mapped to Release Tag: {tag} (Commit: {commit[:7]})\n")
+            
+            gtest_path = os.path.join(os.getcwd(), "googletest")
+            if not os.path.exists(gtest_path):
+                raise FileNotFoundError(f"GoogleTest repository directory not found at: {gtest_path}. Please clone it first.")
+            
+            # 3. Git Checkout
+            self.append_gtest_log(f"[GTest Builder] Running git checkout {tag}...\n")
+            git_proc = subprocess.run(
+                ["git", "checkout", tag],
+                cwd=gtest_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if git_proc.returncode != 0:
+                self.append_gtest_log(f"[Warning] git checkout warning/error (might be detached HEAD, which is normal):\n{git_proc.stderr}\n")
+            else:
+                self.append_gtest_log(f"[GTest Builder] Git checked out tag {tag} successfully.\n")
+                
+            # 4. Run CMake Configuration & Build
+            env_choice = self.gtest_env_var.get()
+            self.append_gtest_log(f"[GTest Builder] Launching CMake build using environment: {env_choice}...\n")
+            
+            if env_choice == "Windows CMD":
+                build_dir = os.path.join(gtest_path, "build")
+                cmd_conf = ["cmake", "-S", gtest_path, "-B", build_dir, f"-DCMAKE_CXX_STANDARD={cxx_std}"]
+                cmd_build = ["cmake", "--build", build_dir, "--config", "Release"]
+            else:  # WSL
+                cmd_conf = ["wsl", "cmake", "-S", "googletest", "-B", "googletest/build_wsl", f"-DCMAKE_CXX_STANDARD={cxx_std}"]
+                cmd_build = ["wsl", "cmake", "--build", "googletest/build_wsl", "--config", "Release"]
+                
+            self.append_gtest_log(f"Command 1: {' '.join(cmd_conf)}\n")
+            proc_conf = subprocess.Popen(
+                cmd_conf,
+                cwd=os.getcwd() if env_choice == "WSL" else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            for line in proc_conf.stdout:
+                self.append_gtest_log(line)
+            proc_conf.wait()
+            
+            if proc_conf.returncode != 0:
+                raise RuntimeError(f"CMake configuration failed with exit code {proc_conf.returncode}")
+                
+            self.append_gtest_log(f"\nCommand 2: {' '.join(cmd_build)}\n")
+            proc_build = subprocess.Popen(
+                cmd_build,
+                cwd=os.getcwd() if env_choice == "WSL" else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            for line in proc_build.stdout:
+                self.append_gtest_log(line)
+            proc_build.wait()
+            
+            if proc_build.returncode != 0:
+                raise RuntimeError(f"CMake build failed with exit code {proc_build.returncode}")
+                
+            self.append_gtest_log("\n[GTest Builder] GoogleTest built successfully! Libraries are available inside the build folder.\n")
+            
+        except Exception as ex:
+            self.append_gtest_log(f"\n[GTest Builder Error]: {ex}\n")
+            
+        finally:
+            self.run_button.configure(state="normal")
+            self.preview_button.configure(state="normal")
+            self.gtest_checkout_btn.configure(state="normal")
+            self.gtest_build_btn.configure(state="normal")
+            self.gtest_cmake_btn.configure(state="normal")
+
+    def generate_gtest_cmake(self):
+        self.gtest_log_text.configure(state='normal')
+        self.gtest_log_text.delete(1.0, tk.END)
+        
+        cxx_std = self.gtest_cxx_var.get()
+        if cxx_std == "Auto-detect":
+            from .parser.cxx_standard_detector import detect_cxx_standard
+            cxx_std = detect_cxx_standard(self.project_root_var.get())
+        cxx_std = cxx_std or "17"
+        
+        tag, commit = get_gtest_release_info(cxx_std)
+        
+        cmake_snippet = f"""# GoogleTest CMake Integration (FetchContent)
+# For C++{cxx_std} -> Using tag {tag}
+
+include(FetchContent)
+
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG        {commit} # tag {tag}
+)
+
+# For Windows: prevent overriding compiler settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(googletest)
+"""
+        self.gtest_log_text.insert(tk.END, cmake_snippet)
+        self.gtest_log_text.configure(state='disabled')
+        
+        # Copy to clipboard
+        self.root.clipboard_clear()
+        self.root.clipboard_append(cmake_snippet)
+        messagebox.showinfo("CMake Code Copied", "The CMake FetchContent integration snippet has been copied to your clipboard!")
+
+def get_gtest_release_info(cxx_std):
+    if cxx_std == "11":
+        return "release-1.12.1", "58d77fa8070e8cec2dc1ed015d66b454c8d78850"
+    elif cxx_std == "14":
+        return "v1.16.0", "6910c9d9165801d8827d628cb72eb7ea9dd538c5"
+    else:  # 17, 20 or default/fallback
+        return "v1.17.0", "52eb8108c5bdec04579160ae17225d66034bd723"
 
 def launch_gui():
     root = tk.Tk()
