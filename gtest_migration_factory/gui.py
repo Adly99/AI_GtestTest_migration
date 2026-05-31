@@ -84,7 +84,9 @@ class GTestMigrationGUI:
         self.style.map('TNotebook.Tab', background=[('selected', ACCENT_COLOR)], foreground=[('selected', SURFACE_COLOR)])
         
         self.setup_ui()
+        self.load_config()             # Load saved config if it exists
         self.on_target_mode_changed()  # Trigger initial toggle state
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def setup_ui(self):
         # Main Title Header
@@ -351,14 +353,22 @@ class GTestMigrationGUI:
             style="Run.TButton",
             command=self.execute_pipeline
         )
-        self.run_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.run_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
         self.preview_button = ttk.Button(
             btns_subframe,
             text="Preview Mock",
             command=self.preview_mock
         )
-        self.preview_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+        self.preview_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 2))
+
+        self.open_output_button = ttk.Button(
+            btns_subframe,
+            text="Open Folder 📁",
+            command=self.open_output_folder,
+            state="disabled"
+        )
+        self.open_output_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
         # ----------------------------------------------------
         # 6. DUAL-TAB CONSOLE & CODE PREVIEW (RIGHT PANEL)
@@ -552,7 +562,8 @@ class GTestMigrationGUI:
         self.console_text.delete(1.0, tk.END)
         self.console_text.configure(state='disabled')
         
-        self.status_label.configure(text="Status: Executing...", fg=ACCENT_COLOR)
+        self.status_label.configure(text="Status: Executing... ●", fg=ACCENT_COLOR)
+        self.open_output_button.configure(state="disabled")
         self.root.update_idletasks()
 
         # Capture print outputs
@@ -635,17 +646,19 @@ class GTestMigrationGUI:
 
             if result["status"] == "success":
                 if dry_run:
-                    self.status_label.configure(text="Status: Dry Run Done!", fg=SUCCESS_COLOR)
+                    self.status_label.configure(text="Status: Dry Run Done! ●", fg=SUCCESS_COLOR)
                     print(f"\nDry run complete. {len(result['generated_files'])} files would be processed/written.")
                 else:
-                    self.status_label.configure(text="Status: Success!", fg=SUCCESS_COLOR)
+                    self.status_label.configure(text="Status: Success! ●", fg=SUCCESS_COLOR)
+                    self.open_output_button.configure(state="normal")
                     print(f"\nGenerated {len(result['generated_files'])} files successfully!")
+                self.save_config()
             else:
-                self.status_label.configure(text=f"Status: Error - {result.get('error')}", fg=ERROR_COLOR)
+                self.status_label.configure(text=f"Status: Error - {result.get('error')} ●", fg=ERROR_COLOR)
                 print(f"\n[Error] Pipeline failed: {result.get('error')}")
 
         except Exception as e:
-            self.status_label.configure(text="Status: Exception occurred!", fg=ERROR_COLOR)
+            self.status_label.configure(text="Status: Exception occurred! ●", fg=ERROR_COLOR)
             print(f"\n[Exception occurred during execution]:\n{e}")
             import traceback
             traceback.print_exc()
@@ -654,6 +667,82 @@ class GTestMigrationGUI:
             # Restore stdout/stderr streams
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+    def open_output_folder(self):
+        out_dir = self.output_dir_var.get()
+        if os.path.exists(out_dir):
+            if sys.platform == "win32":
+                os.startfile(out_dir)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.run(["open", out_dir])
+            else:
+                import subprocess
+                subprocess.run(["xdg-open", out_dir])
+
+    def save_config(self):
+        import json
+        config_path = os.path.join(os.getcwd(), ".gtest_factory_config.json")
+        try:
+            config = {
+                "project_root": self.project_root_var.get(),
+                "output_dir": self.output_dir_var.get(),
+                "file_path": self.file_path_var.get(),
+                "target_mode": self.target_mode_var.get(),
+                "exclude_patterns": self.exclude_patterns_var.get(),
+                "cxx_standard": self.cxx_standard_var.get(),
+                "mock_prefix": self.mock_prefix_var.get(),
+                "mock_suffix": self.mock_suffix_var.get(),
+                "namespace_filter": self.namespace_filter_var.get(),
+                "custom_includes": self.custom_includes_var.get(),
+                "compile_commands": self.compile_commands_var.get(),
+                "keep_class_name": self.keep_class_name_var.get(),
+                "no_override": self.no_override_var.get(),
+                "clang_format": self.clang_format_var.get(),
+                "verify_compile": self.verify_compile_var.get(),
+                "dry_run": self.dry_run_var.get(),
+                "verbose": self.verbose_var.get()
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
+        except Exception:
+            pass
+
+    def load_config(self):
+        import json
+        config_path = os.path.join(os.getcwd(), ".gtest_factory_config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                
+                # Check for each value and set it if present in config
+                if "project_root" in config: self.project_root_var.set(config["project_root"])
+                if "output_dir" in config: self.output_dir_var.set(config["output_dir"])
+                if "file_path" in config: self.file_path_var.set(config["file_path"])
+                if "target_mode" in config: self.target_mode_var.set(config["target_mode"])
+                if "exclude_patterns" in config: self.exclude_patterns_var.set(config["exclude_patterns"])
+                if "cxx_standard" in config: self.cxx_standard_var.set(config["cxx_standard"])
+                if "mock_prefix" in config: self.mock_prefix_var.set(config["mock_prefix"])
+                if "mock_suffix" in config: self.mock_suffix_var.set(config["mock_suffix"])
+                if "namespace_filter" in config: self.namespace_filter_var.set(config["namespace_filter"])
+                if "custom_includes" in config: self.custom_includes_var.set(config["custom_includes"])
+                if "compile_commands" in config: self.compile_commands_var.set(config["compile_commands"])
+                if "keep_class_name" in config: self.keep_class_name_var.set(config["keep_class_name"])
+                if "no_override" in config: self.no_override_var.set(config["no_override"])
+                if "clang_format" in config: self.clang_format_var.set(config["clang_format"])
+                if "verify_compile" in config: self.verify_compile_var.set(config["verify_compile"])
+                if "dry_run" in config: self.dry_run_var.set(config["dry_run"])
+                if "verbose" in config: self.verbose_var.set(config["verbose"])
+            except Exception:
+                pass
+
+    def on_closing(self):
+        try:
+            self.save_config()
+        except Exception:
+            pass
+        self.root.destroy()
 
 def launch_gui():
     root = tk.Tk()
