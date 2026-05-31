@@ -984,6 +984,14 @@ class GTestMigrationGUI:
             proc_conf.wait()
             
             if proc_conf.returncode != 0:
+                if proc_conf.returncode == 127:
+                    if env_choice == "WSL (Linux)":
+                        self.append_gtest_log("\n[Troubleshooting Tip] It seems 'cmake' is not installed in your WSL environment.\n"
+                                             "You can install it inside WSL by opening your WSL terminal and running:\n"
+                                             "  sudo apt-get update && sudo apt-get install cmake build-essential\n")
+                    else:
+                        self.append_gtest_log("\n[Troubleshooting Tip] It seems 'cmake' is not installed or not in your Windows system PATH.\n"
+                                             "Please verify that CMake is installed and added to your system environment variables.\n")
                 raise RuntimeError(f"CMake configuration failed with exit code {proc_conf.returncode}")
                 
             self.append_gtest_log(f"\nCommand 2: {' '.join(cmd_build)}\n")
