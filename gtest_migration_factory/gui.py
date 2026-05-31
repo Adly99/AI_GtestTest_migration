@@ -83,6 +83,14 @@ class GTestMigrationGUI:
         self.style.configure('TNotebook.Tab', background=SURFACE_COLOR, foreground=TEXT_COLOR, font=('Arial', 9, 'bold'), padding=(10, 4))
         self.style.map('TNotebook.Tab', background=[('selected', ACCENT_COLOR)], foreground=[('selected', SURFACE_COLOR)])
         
+        # Treeview style (dark theme)
+        self.style.configure('Treeview', 
+            background=SURFACE_COLOR, 
+            fieldbackground=SURFACE_COLOR, 
+            foreground=TEXT_COLOR,
+            font=('Arial', 9)
+        )
+        
         self.setup_ui()
         self.load_config()             # Load saved config if it exists
         self.on_target_mode_changed()  # Trigger initial toggle state
@@ -119,6 +127,39 @@ class GTestMigrationGUI:
         # Left Column: Configuration & Controls Panel
         left_panel = ttk.Frame(main_container)
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 10))
+
+        # Middle Column: Interactive Checklist Panel
+        middle_panel = ttk.LabelFrame(main_container, text=" Interactive Symbol Checklist ")
+        middle_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, width=280, padx=(10, 10))
+        middle_panel.pack_propagate(False)
+
+        tree_ctrl_frame = ttk.Frame(middle_panel)
+        tree_ctrl_frame.pack(fill=tk.X, pady=4, padx=5)
+        
+        self.load_symbols_btn = ttk.Button(
+            tree_ctrl_frame,
+            text="Parse & Load Symbols",
+            command=self.load_symbols_to_checklist
+        )
+        self.load_symbols_btn.pack(fill=tk.X, padx=2, pady=2)
+        
+        select_btns_frame = ttk.Frame(tree_ctrl_frame)
+        select_btns_frame.pack(fill=tk.X, pady=2)
+        
+        self.sel_all_btn = ttk.Button(select_btns_frame, text="Select All", command=self.select_all_tree)
+        self.sel_all_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        
+        self.desel_all_btn = ttk.Button(select_btns_frame, text="Deselect All", command=self.deselect_all_tree)
+        self.desel_all_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+
+        self.tree = ttk.Treeview(middle_panel, selectmode="none", show="tree")
+        self.tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT, padx=(5, 0), pady=5)
+        
+        tree_scroll = ttk.Scrollbar(middle_panel, command=self.tree.yview)
+        tree_scroll.pack(fill=tk.Y, side=tk.RIGHT, padx=(0, 5), pady=5)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+        
+        self.tree.bind("<Button-1>", self.on_tree_click)
 
         # Right Column: Console Logs & Code Preview Notebook
         right_panel = ttk.Frame(main_container)
@@ -546,6 +587,162 @@ class GTestMigrationGUI:
         gtest_scrollbar.pack(fill=tk.Y, side=tk.RIGHT)
         self.gtest_log_text.configure(yscrollcommand=gtest_scrollbar.set)
 
+    def load_symbols_to_checklist(self):
+        # Clear existing items
+        for item in self.tree.get_children(""):
+            self.tree.delete(item)
+            
+        proj_root = self.project_root_var.get()
+        target_mode = self.target_mode_var.get()
+        target_file = self.file_path_var.get() if target_mode == "file" else None
+        process_all = (target_mode == "all")
+        exclude_pats = self.exclude_patterns_var.get().strip() or None
+        
+        from .orchestrator.pipeline import detect_cxx_standard
+        header_exts = (".h", ".hpp", ".hh", ".h++")
+        
+        exclude_list = []
+        if exclude_pats:
+            exclude_list = [p.strip() for p in exclude_pats.split(",") if p.strip()]
+        out_dir = self.output_dir_var.get()
+        if out_dir.startswith(proj_root):
+            exclude_list.append(out_dir.replace("\\", "/"))
+            
+        def is_excluded(path):
+            normalized_path = os.path.abspath(path).replace("\\", "/").lower()
+            for p in exclude_list:
+                if p.lower() in normalized_path:
+                    return True
+            return False
+
+        target_files = []
+        if target_file:
+            abs_file = os.path.abspath(target_file)
+            if os.path.exists(abs_file):
+                target_files.append(abs_file)
+        elif process_all:
+            for root, _, files in os.walk(proj_root):
+                for file in files:
+                    if file.lower().endswith(header_exts):
+                        abs_path = os.path.abspath(os.path.join(root, file))
+                        if not is_excluded(abs_path):
+                            target_files.append(abs_path)
+        else:
+            from .parser.git_helper import get_modified_files
+            try:
+                changed = get_modified_files(proj_root)
+                for f in changed:
+                    if f.lower().endswith(header_exts) and not is_excluded(f):
+                        target_files.append(f)
+            except Exception:
+                pass
+                
+        if not target_files:
+            messagebox.showinfo("No Headers Found", "No target C++ headers found to parse.")
+            return
+
+        from .parser.cpp_parser import parse_header
+        
+        loaded_any = False
+        for path in target_files:
+            filename = os.path.basename(path)
+            try:
+                ast = parse_header(path)
+                if not ast.classes and not ast.free_functions:
+                    continue
+                    
+                file_node = self.tree.insert("", "end", text=f"☑ {filename}", open=True, values=(path, "file"))
+                loaded_any = True
+                
+                # Add classes
+                for c in ast.classes:
+                    class_node = self.tree.insert(file_node, "end", text=f"☑ {c.name}", open=True, values=(c.name, "class"))
+                    # Add methods
+                    for m in c.methods:
+                        self.tree.insert(class_node, "end", text=f"☑ {m.name}", values=(m.name, "method"))
+                    for m in c.static_methods:
+                        self.tree.insert(class_node, "end", text=f"☑ {m.name} (static)", values=(m.name, "method"))
+                        
+                # Add free functions
+                if ast.free_functions:
+                    for f in ast.free_functions:
+                        self.tree.insert(file_node, "end", text=f"☑ {f.name} (free)", values=(f.name, "free_function"))
+            except Exception as e:
+                print(f"[Warning] Failed to parse {filename}: {e}")
+                
+        if not loaded_any:
+            messagebox.showinfo("No Symbols Found", "Header files were scanned, but no mockable classes or methods were found.")
+
+    def on_tree_click(self, event):
+        item_id = self.tree.identify_row(event.y)
+        if not item_id:
+            return
+            
+        curr_text = self.tree.item(item_id, "text")
+        
+        if curr_text.startswith("☑"):
+            new_text = curr_text.replace("☑", "☐", 1)
+            checked = False
+        elif curr_text.startswith("☐"):
+            new_text = curr_text.replace("☐", "☑", 1)
+            checked = True
+        else:
+            return
+            
+        self.tree.item(item_id, text=new_text)
+        self.propagate_checked_state(item_id, checked)
+        self.update_parent_checked_state(item_id)
+
+    def propagate_checked_state(self, item_id, checked):
+        prefix = "☑" if checked else "☐"
+        for child in self.tree.get_children(item_id):
+            curr_text = self.tree.item(child, "text")
+            if curr_text.startswith("☐") or curr_text.startswith("☑"):
+                new_text = prefix + curr_text[1:]
+                self.tree.item(child, text=new_text)
+            self.propagate_checked_state(child, checked)
+
+    def update_parent_checked_state(self, item_id):
+        parent_id = self.tree.parent(item_id)
+        if not parent_id:
+            return
+            
+        children = self.tree.get_children(parent_id)
+        all_checked = True
+        all_unchecked = True
+        
+        for child in children:
+            text = self.tree.item(child, "text")
+            if text.startswith("☐"):
+                all_checked = False
+            elif text.startswith("☑"):
+                all_unchecked = False
+                
+        parent_text = self.tree.item(parent_id, "text")
+        if all_checked:
+            new_parent_text = "☑" + parent_text[1:]
+        elif all_unchecked:
+            new_parent_text = "☐" + parent_text[1:]
+        else:
+            new_parent_text = "☑" + parent_text[1:]
+            
+        self.tree.item(parent_id, text=new_parent_text)
+        self.update_parent_checked_state(parent_id)
+
+    def select_all_tree(self):
+        for item in self.tree.get_children(""):
+            curr_text = self.tree.item(item, "text")
+            if curr_text.startswith("☐") or curr_text.startswith("☑"):
+                self.tree.item(item, text="☑" + curr_text[1:])
+            self.propagate_checked_state(item, True)
+
+    def deselect_all_tree(self):
+        for item in self.tree.get_children(""):
+            curr_text = self.tree.item(item, "text")
+            if curr_text.startswith("☐") or curr_text.startswith("☑"):
+                self.tree.item(item, text="☐" + curr_text[1:])
+            self.propagate_checked_state(item, False)
+
     def on_target_mode_changed(self):
         mode = self.target_mode_var.get()
         if mode == "file":
@@ -775,6 +972,39 @@ class GTestMigrationGUI:
             custom_inc = self.custom_includes_var.get().strip() or None
             compile_cmds = self.compile_commands_var.get().strip() or None
 
+            # Traverse treeview to build checklist_filter
+            tree_has_items = len(self.tree.get_children("")) > 0
+            checklist_filter = None
+            if tree_has_items:
+                checklist_filter = {}
+                has_selections = False
+                for file_item in self.tree.get_children(""):
+                    for class_or_func_item in self.tree.get_children(file_item):
+                        item_text = self.tree.item(class_or_func_item, "text")
+                        item_values = self.tree.item(class_or_func_item, "values")
+                        
+                        if item_text.startswith("☑"):
+                            if item_values and len(item_values) >= 2:
+                                name, item_type = item_values[0], item_values[1]
+                                if item_type == "class":
+                                    allowed_methods = []
+                                    for method_item in self.tree.get_children(class_or_func_item):
+                                        m_text = self.tree.item(method_item, "text")
+                                        m_values = self.tree.item(method_item, "values")
+                                        if m_text.startswith("☑") and m_values:
+                                            allowed_methods.append(m_values[0])
+                                    checklist_filter[name] = allowed_methods
+                                    has_selections = True
+                                elif item_type == "free_function":
+                                    if "__free_functions__" not in checklist_filter:
+                                        checklist_filter["__free_functions__"] = []
+                                    checklist_filter["__free_functions__"].append(name)
+                                    has_selections = True
+                                    
+                if not has_selections:
+                    print("[Warning] Checklist is loaded but no items are checked. Aborting migration.")
+                    raise ValueError("Checklist is loaded but no items are checked. Please check at least one class/method.")
+
             # Run orchestrator
             print(f"=== GTest Migration GUI Launch ===")
             print(f"Project Root:     {proj_root}")
@@ -813,7 +1043,8 @@ class GTestMigrationGUI:
                 verify_compile=verify_compile,
                 custom_compiler_path=self.custom_compiler_path_var.get().strip() or None,
                 custom_clang_format_path=self.custom_clang_format_path_var.get().strip() or None,
-                preserve_structure=self.preserve_structure_var.get()
+                preserve_structure=self.preserve_structure_var.get(),
+                checklist_filter=checklist_filter
             )
 
             if result["status"] == "success":

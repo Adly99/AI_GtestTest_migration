@@ -38,7 +38,6 @@ def extract_method_body(cpp_content, class_name, method_name):
     """
     Finds the definition of class_name::method_name and extracts its body content.
     """
-    # Regex matching ClassName::MethodName(
     pattern = r'\b' + re.escape(class_name) + r'::' + re.escape(method_name) + r'\s*\('
     match = re.search(pattern, cpp_content)
     if not match:
@@ -49,9 +48,104 @@ def extract_method_body(cpp_content, class_name, method_name):
         return cpp_content[brace_start + 1:brace_end]
     return None
 
+def extract_type_aliases(public_declarations, namespace_declarations=None):
+    """
+    Parses using and typedef statements from public_declarations and namespace_declarations
+    to build an alias map { alias_name: base_type }.
+    """
+    alias_map = {}
+    
+    if namespace_declarations:
+        for decl in namespace_declarations:
+            text = decl.get("text", "").strip()
+            parse_alias_text(text, alias_map)
+            
+    if public_declarations:
+        for decl in public_declarations:
+            if isinstance(decl, dict) and decl.get("is_special"):
+                text = decl.get("text", "").strip()
+                parse_alias_text(text, alias_map)
+                
+    return alias_map
+
+def parse_alias_text(text, alias_map):
+    text = text.strip().rstrip(";")
+    
+    using_match = re.match(r'^using\s+([a-zA-Z0-9_:]+)\s*=\s*(.+)$', text)
+    if using_match:
+        alias = using_match.group(1).split("::")[-1].strip()
+        base = using_match.group(2).strip()
+        alias_map[alias] = base
+        return
+        
+    if text.startswith("typedef"):
+        m = re.match(r'^typedef\s+(.+?)\s+([a-zA-Z0-9_]+)$', text)
+        if m:
+            base = m.group(1).strip()
+            alias = m.group(2).strip()
+            alias_map[alias] = base
+        else:
+            parts = re.split(r'\s+', text)
+            if len(parts) >= 3:
+                alias = parts[-1].strip()
+                base = " ".join(parts[1:-1]).strip()
+                alias_map[alias] = base
+
+def resolve_type(type_str, alias_map):
+    if not alias_map:
+        return type_str
+    clean_type = type_str.replace("const", "").replace("&", "").replace("*", "").strip()
+    visited = set()
+    curr = clean_type
+    while curr in alias_map and curr not in visited:
+        visited.add(curr)
+        resolved = alias_map[curr]
+        curr = resolved.replace("const", "").replace("&", "").replace("*", "").strip()
+        
+    if curr != clean_type:
+        return re.sub(r'\b' + re.escape(clean_type) + r'\b', curr, type_str)
+    return type_str
+
 def get_default_val_for_type(p_type):
     # Remove const and references to check the base type
     clean = p_type.replace("const", "").replace("&", "").strip()
+    
+    # Match container types: std::vector, std::list, std::set, std::deque, std::array
+    container_match = re.search(r'std::(vector|list|set|deque|array)\s*<\s*(.+?)\s*>', clean)
+    if container_match:
+        inner_type = container_match.group(2).split(",")[0].strip() # handles std::array size or allocators
+        inner_clean = inner_type.replace("const", "").replace("&", "").replace("*", "").strip()
+        if "string" in inner_clean:
+            return '{"test_val1", "test_val2"}'
+        elif "bool" in inner_clean:
+            return '{true, false}'
+        elif any(t in inner_clean for t in ("int", "size_t", "int32_t", "uint32_t")):
+            return '{1, 2, 3}'
+        elif any(t in inner_clean for t in ("double", "float")):
+            return '{1.0, 2.0, 3.0}'
+        else:
+            return '{}'
+            
+    # Match map containers: std::map, std::unordered_map
+    map_match = re.search(r'std::(map|unordered_map)\s*<\s*([^,]+)\s*,\s*(.+?)\s*>', clean)
+    if map_match:
+        key_type = map_match.group(2).strip()
+        val_type = map_match.group(3).split(",")[0].strip()
+        key_clean = key_type.replace("const", "").replace("&", "").replace("*", "").strip()
+        val_clean = val_type.replace("const", "").replace("&", "").replace("*", "").strip()
+        
+        key_val = "1"
+        if "string" in key_clean:
+            key_val = '"key1"'
+            
+        val_val = "10"
+        if "string" in val_clean:
+            val_val = '"value1"'
+        elif "bool" in val_clean:
+            val_val = "true"
+            
+        return f"{{{{{key_val}, {val_val}}}}}"
+
     if "string" in clean:
         return '"test_val"'
     elif "*" in p_type:
@@ -62,7 +156,9 @@ def get_default_val_for_type(p_type):
         return "10"
     return None
 
-def generate_arg_declaration(p_type, p_name, override_val=None):
+def generate_arg_declaration(p_type, p_name, override_val=None, alias_map=None):
+    if alias_map:
+        p_type = resolve_type(p_type, alias_map)
     # Determine base default value
     if override_val is not None:
         default_val = override_val
@@ -121,7 +217,7 @@ def detect_dependency_calls(body_text, param_name):
         calls.append(m.group(1))
     return list(set(calls))
 
-def build_scenario_args(method, body_text, overrides=None):
+def build_scenario_args(method, body_text, overrides=None, alias_map=None):
     if overrides is None:
         overrides = {}
         
@@ -132,10 +228,12 @@ def build_scenario_args(method, body_text, overrides=None):
     for idx, p in enumerate(method.params):
         p_name = p.get("name") or f"arg{idx}"
         p_type = p.get("type", "")
+        if alias_map:
+            p_type = resolve_type(p_type, alias_map)
         
         if idx in overrides:
             override_val = overrides[idx]
-            decl, expr = generate_arg_declaration(p_type, p_name, override_val=override_val)
+            decl, expr = generate_arg_declaration(p_type, p_name, override_val=override_val, alias_map=alias_map)
             if decl:
                 arrange_decls.append(decl)
             act_args.append(expr)
@@ -176,14 +274,14 @@ def build_scenario_args(method, body_text, overrides=None):
             for dm in dep_methods:
                 expect_calls.append(f"EXPECT_CALL({mock_var_name}, {dm}(::testing::_)).Times(::testing::AtLeast(1));")
         else:
-            decl, expr = generate_arg_declaration(p_type, p_name)
+            decl, expr = generate_arg_declaration(p_type, p_name, alias_map=alias_map)
             if decl:
                 arrange_decls.append(decl)
             act_args.append(expr)
             
     return arrange_decls, act_args, expect_calls
 
-def analyze_method_body(method, body_text=None):
+def analyze_method_body(method, body_text=None, alias_map=None):
     """
     Analyzes C++ method signatures and extracted implementation bodies 
     to output specific Positive, Negative, and Edge Case scenarios.
@@ -191,14 +289,16 @@ def analyze_method_body(method, body_text=None):
     scenarios = []
     
     # 1. Base/Positive Scenario Setup
-    arrange_decls, act_args, expect_calls = build_scenario_args(method, body_text)
+    arrange_decls, act_args, expect_calls = build_scenario_args(method, body_text, alias_map=alias_map)
     full_arrange = arrange_decls + expect_calls
     args_str = ", ".join(act_args)
     ret_type = method.return_type
     
+    resolved_ret_type = resolve_type(ret_type, alias_map) if alias_map else ret_type
+    
     if ret_type != "void":
         act_statement = f"{ret_type} actual = mock_instance.{method.name}({args_str});"
-        assert_statements = [f"EXPECT_THAT(actual, Eq({get_type_default_assert_value(ret_type)}));"]
+        assert_statements = [f"EXPECT_THAT(actual, Eq({get_type_default_assert_value(resolved_ret_type)}));"]
     else:
         act_statement = f"mock_instance.{method.name}({args_str});"
         assert_statements = ["// Verify side effects / interactions"]
@@ -218,14 +318,16 @@ def analyze_method_body(method, body_text=None):
         for idx, p in enumerate(method.params):
             p_name = p.get("name") or f"arg{idx}"
             p_type = p.get("type", "")
+            if alias_map:
+                p_type = resolve_type(p_type, alias_map)
             if "*" in p_type:
                 null_pattern = r'\b' + re.escape(p_name) + r'\s*(==\s*nullptr|==\s*NULL|==\s*0|!\s*' + re.escape(p_name) + r'\b)'
                 if re.search(null_pattern, body_text) or re.search(r'!\s*' + re.escape(p_name) + r'\b', body_text):
-                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: "nullptr"})
+                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: "nullptr"}, alias_map=alias_map)
                     full_neg_arrange = neg_arrange + neg_expects
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
-                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify side effects of null handler"]
+                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(resolved_ret_type)}));"] if ret_type != "void" else ["// Verify side effects of null handler"]
                     
                     scenarios.append(TestScenario(
                         method_name=method.name,
@@ -240,14 +342,16 @@ def analyze_method_body(method, body_text=None):
         for idx, p in enumerate(method.params):
             p_name = p.get("name") or f"arg{idx}"
             p_type = p.get("type", "")
+            if alias_map:
+                p_type = resolve_type(p_type, alias_map)
             if any(t in p_type for t in ("int", "double", "float", "size_t", "int32_t", "uint32_t")):
                 lt_zero = r'\b' + re.escape(p_name) + r'\s*(<\s*0|<=\s*0|==\s*0)'
                 if re.search(lt_zero, body_text):
-                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: "0"})
+                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: "0"}, alias_map=alias_map)
                     full_neg_arrange = neg_arrange + neg_expects
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
-                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify edge case behavior"]
+                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(resolved_ret_type)}));"] if ret_type != "void" else ["// Verify edge case behavior"]
                     
                     scenarios.append(TestScenario(
                         method_name=method.name,
@@ -262,14 +366,16 @@ def analyze_method_body(method, body_text=None):
         for idx, p in enumerate(method.params):
             p_name = p.get("name") or f"arg{idx}"
             p_type = p.get("type", "")
+            if alias_map:
+                p_type = resolve_type(p_type, alias_map)
             if "string" in p_type:
                 empty_pattern = r'\b' + re.escape(p_name) + r'\s*(\.\s*empty\s*\(\s*\)|==\s*""|==\s*\'\')'
                 if re.search(empty_pattern, body_text):
-                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: '""'})
+                    neg_arrange, neg_args, neg_expects = build_scenario_args(method, body_text, overrides={idx: '""'}, alias_map=alias_map)
                     full_neg_arrange = neg_arrange + neg_expects
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
-                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify empty string behavior"]
+                    neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(resolved_ret_type)}));"] if ret_type != "void" else ["// Verify empty string behavior"]
                     
                     scenarios.append(TestScenario(
                         method_name=method.name,
@@ -282,15 +388,14 @@ def analyze_method_body(method, body_text=None):
 
     return scenarios
 
-def analyze_cpp_file(cpp_file_path, cpp_class):
+def analyze_cpp_file(cpp_file_path, cpp_class, alias_map=None):
     """
     Reads a C++ source file if available and extracts test scenarios for the specified class.
     """
     if not cpp_file_path or not os.path.exists(cpp_file_path):
-        # Fallback to signature-only defaults if no file path provided
         scenarios = []
         for method in cpp_class.methods:
-            scenarios.extend(analyze_method_body(method))
+            scenarios.extend(analyze_method_body(method, alias_map=alias_map))
         return scenarios
         
     try:
@@ -302,5 +407,5 @@ def analyze_cpp_file(cpp_file_path, cpp_class):
     scenarios = []
     for method in cpp_class.methods:
         body = extract_method_body(cpp_content, cpp_class.name, method.name)
-        scenarios.extend(analyze_method_body(method, body))
+        scenarios.extend(analyze_method_body(method, body, alias_map=alias_map))
     return scenarios

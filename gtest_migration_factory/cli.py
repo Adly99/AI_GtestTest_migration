@@ -157,7 +157,23 @@ def main():
         help="Launch the Graphical User Interface (GUI)."
     )
 
+    parser.add_argument(
+        "--checklist-filter",
+        type=str,
+        default=None,
+        help="JSON string of classes and methods to generate (e.g. '{\"ClassName\":[\"method1\"]}')"
+    )
+
     args = parser.parse_args()
+
+    checklist_filter = None
+    if args.checklist_filter:
+        import json
+        try:
+            checklist_filter = json.loads(args.checklist_filter)
+        except Exception as e:
+            print(f"[Error] Failed to parse --checklist-filter: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Validate directories
     if not os.path.isdir(args.project_root):
@@ -199,7 +215,8 @@ def main():
         verify_compile=args.verify_compile,
         custom_compiler_path=args.custom_compiler,
         custom_clang_format_path=args.custom_clang_format,
-        preserve_structure=args.preserve_structure
+        preserve_structure=args.preserve_structure,
+        checklist_filter=checklist_filter
     )
 
     if result["status"] == "success":

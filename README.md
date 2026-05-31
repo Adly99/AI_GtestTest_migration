@@ -32,7 +32,15 @@ This tool is designed to work in two ways:
     * **Custom Toolchain Binary Paths**: Set custom paths for compiler binaries (e.g., specific `g++` or `cl` paths) for syntax/verify checks, and custom `clang-format` binaries. Settings are automatically saved/loaded in the desktop GUI's `.gtest_factory_config.json`.
     * **Duplicate Filename Warnings**: Proactively scans the target repository for duplicate C++ header names in different folders and warns the user about overwrite risks, with automated suggestions for folders to add to Exclude Patterns (e.g., `build`, `out`).
     * **Execution Dashboard Summary**: Displays a unified metrics summary (Scanned headers, Generated mocks, Generated fixtures, Skipped empty, Filename clashes) both on the command line terminal and inside a visual panel in the Tkinter desktop GUI.
-8. **Integrated GoogleTest Builder**:
+8. **Interactive Class & Method Checklist**:
+    * Displays all parsed classes, methods (static and instance), and free functions in a middle sidebar panel in the desktop GUI.
+    * Users can check/uncheck checkboxes (`☑` vs `☐`) to selectively generate mocks and test fixtures only for specific classes or methods.
+    * Checking or unchecking parent items automatically cascades down to all children.
+9. **Standalone C++ Test Build Target (`CMakeLists.txt`)**:
+    * Automatically generates a complete, standalone `CMakeLists.txt` and a `main.cpp` entry point inside the mocks output directory.
+    * This allows compiling and running the generated tests instantly as a standalone executable.
+    * Automatically locates and links prebuilt GoogleTest and GMock static libraries built using the builder.
+10. **Integrated GoogleTest Builder**:
     * A dedicated GUI tab to download/checkout the exact GoogleTest version (v1.12.1, v1.16.0, v1.17.0) compatible with your target C++ standard.
     * Automatically compile and build the static testing libraries using a localized sandbox directory (`/tmp`) under WSL (Linux) or Windows CMD (MSVC) environments, outputting `.a` or `.lib` static artifacts directly back to the project workspace directory.
     * Generates ready-to-copy `FetchContent` CMake config templates tailored to the C++ standard version mapping.
@@ -256,6 +264,7 @@ python -m gtest_migration_factory --output-dir <path_to_save_mocks> [options]
 * `--custom-compiler`: Path to custom compiler binary (e.g. `C:\mingw\bin\g++.exe`).
 * `--custom-clang-format`: Path to custom `clang-format` binary.
 * `--no-preserve-structure`: Disable mirroring project source relative directory layout in the output folder (mirroring is enabled by default).
+* `--checklist-filter`: JSON string specifying which classes and methods to generate (e.g. `'{"Account":["Deposit"]}'`).
 * `--verbose`: Print extra logging information.
 
 #### Build & Verification Features:

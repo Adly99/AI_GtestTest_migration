@@ -5,6 +5,112 @@ from ..parser.cxx_standard_detector import detect_cxx_standard
 from ..parser.cpp_parser import parse_header
 from ..generator.mock_generator import generate_mock_header, generate_test_fixture
 
+def generate_standalone_cmake(output_dir, project_root, cxx_standard, generated_files, verbose=False):
+    cmake_file = os.path.join(output_dir, "CMakeLists.txt")
+    test_cpp_files = [f for f in generated_files if os.path.basename(f).startswith("test_") and f.endswith(".cpp")]
+    
+    # Calculate paths relative to output_dir
+    gtest_abs = os.path.abspath(os.path.join(os.getcwd(), "googletest"))
+    gtest_rel = os.path.relpath(gtest_abs, output_dir).replace("\\", "/")
+    proj_rel = os.path.relpath(project_root, output_dir).replace("\\", "/")
+    
+    # Search paths for prebuilt GoogleTest and GMock libraries
+    # built by Windows GTest Builder (googletest/build/lib/Release or build/lib) or WSL (googletest/build_wsl/lib)
+    lib_paths = [
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/build/lib/Release",
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/build/lib",
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/build_wsl/lib",
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/googletest/build/lib/Release",
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/googletest/build/lib",
+        f"${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/googletest/build_wsl/lib"
+    ]
+    lib_paths_str = "\n    ".join([f'"{p}"' for p in lib_paths])
+    
+    cxx_std_val = cxx_standard or "17"
+    
+    cmake_content = f"""cmake_minimum_required(VERSION 3.12)
+project(MockTests CXX)
+
+set(CMAKE_CXX_STANDARD {cxx_std_val})
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find Threads dependency (needed by GoogleTest)
+find_package(Threads REQUIRED)
+
+# GoogleTest and GMock include directories
+include_directories(
+    "${{CMAKE_CURRENT_LIST_DIR}}/{proj_rel}"
+    "${{CMAKE_CURRENT_LIST_DIR}}"
+    "${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/googletest/include"
+    "${{CMAKE_CURRENT_LIST_DIR}}/{gtest_rel}/googlemock/include"
+)
+
+# Search paths for prebuilt GoogleTest and GMock libraries
+set(GTEST_LIB_SEARCH_PATHS
+    {lib_paths_str}
+)
+
+# Find GoogleTest libraries
+find_library(GTEST_LIBRARIES NAMES gtest PATHS ${{GTEST_LIB_SEARCH_PATHS}} NO_DEFAULT_PATH)
+find_library(GTEST_MAIN_LIBRARIES NAMES gtest_main PATHS ${{GTEST_LIB_SEARCH_PATHS}} NO_DEFAULT_PATH)
+find_library(GMOCK_LIBRARIES NAMES gmock PATHS ${{GTEST_LIB_SEARCH_PATHS}} NO_DEFAULT_PATH)
+
+# Fallback to default paths if not found in custom search paths
+if(NOT GTEST_LIBRARIES)
+    find_library(GTEST_LIBRARIES NAMES gtest)
+endif()
+if(NOT GTEST_MAIN_LIBRARIES)
+    find_library(GTEST_MAIN_LIBRARIES NAMES gtest_main)
+endif()
+if(NOT GMOCK_LIBRARIES)
+    find_library(GMOCK_LIBRARIES NAMES gmock)
+endif()
+
+# List of test source files
+set(TEST_SOURCES
+"""
+    for f in test_cpp_files:
+        rel_name = os.path.relpath(f, output_dir).replace("\\", "/")
+        cmake_content += f"    ${{CMAKE_CURRENT_LIST_DIR}}/{rel_name}\n"
+        
+    cmake_content += f"""    ${{CMAKE_CURRENT_LIST_DIR}}/main.cpp
+)
+
+add_executable(run_tests ${{TEST_SOURCES}})
+
+target_link_libraries(run_tests PRIVATE
+    ${{GTEST_LIBRARIES}}
+    ${{GTEST_MAIN_LIBRARIES}}
+    ${{GMOCK_LIBRARIES}}
+    Threads::Threads
+)
+"""
+    
+    try:
+        with open(cmake_file, "w", encoding="utf-8") as f:
+            f.write(cmake_content)
+        if verbose:
+            print(f"[Orchestrator] Generated standalone CMakeLists.txt: {cmake_file}")
+        generated_files.append(cmake_file)
+            
+        # Write main.cpp if it doesn't exist
+        main_cpp_path = os.path.join(output_dir, "main.cpp")
+        if not os.path.exists(main_cpp_path):
+            with open(main_cpp_path, "w", encoding="utf-8") as f:
+                f.write("""#include <gtest/gtest.h>
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
+""")
+            if verbose:
+                print(f"[Orchestrator] Generated main.cpp entry point: {main_cpp_path}")
+        generated_files.append(main_cpp_path)
+    except Exception as e:
+        print(f"[Warning] Failed to generate standalone CMake files: {e}", file=sys.stderr)
+
+
 def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None, 
                  keep_class_name=False, verbose=False, process_all=False, 
                  exclude_patterns=None, mock_prefix="Mock", mock_suffix="", 
@@ -12,7 +118,7 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                  custom_includes=None, namespace_filter=None,
                  compile_commands=None, verify_compile=False,
                  custom_compiler_path=None, custom_clang_format_path=None,
-                 preserve_structure=True):
+                 preserve_structure=True, checklist_filter=None):
     """
     Orchestrates the parser and generator steps with advanced options.
     """
@@ -164,6 +270,23 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
             print(f"[Error] Failed to parse {basename}: {e}", file=sys.stderr)
             continue
 
+        # Apply checklist filter
+        if checklist_filter is not None:
+            filtered_classes = []
+            for cpp_class in ast.classes:
+                if cpp_class.name in checklist_filter:
+                    allowed_methods = checklist_filter[cpp_class.name]
+                    cpp_class.methods = [m for m in cpp_class.methods if m.name in allowed_methods]
+                    cpp_class.static_methods = [m for m in cpp_class.static_methods if m.name in allowed_methods]
+                    filtered_classes.append(cpp_class)
+            ast.classes = filtered_classes
+            
+            if "__free_functions__" in checklist_filter:
+                allowed_funcs = checklist_filter["__free_functions__"]
+                ast.free_functions = [f for f in ast.free_functions if f.name in allowed_funcs]
+            else:
+                ast.free_functions = []
+
         if not ast.classes and not ast.free_functions:
             if verbose:
                 print(f"[Orchestrator] No classes, structs, or free functions found in {basename}.")
@@ -313,6 +436,13 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                     else:
                         print("[Orchestrator] No compiler (g++, clang++, cl) found on PATH. Skipping syntax verification.")
 
+        # Extract alias map for this AST
+        from ..parser.bbrainy_gtest import extract_type_aliases
+        all_public_decls = []
+        for c in ast.classes:
+            all_public_decls.extend(c.public_declarations)
+        alias_map = extract_type_aliases(all_public_decls, ast.namespace_declarations)
+
         # B. Generate test fixtures for each class defined in the header
         for cpp_class in ast.classes:
             # Respect namespace filter for test fixtures
@@ -347,7 +477,8 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                 mock_hdr_path, 
                 basename, 
                 keep_class_name=keep_class_name,
-                cpp_file_path=cpp_file_path
+                cpp_file_path=cpp_file_path,
+                alias_map=alias_map
             )
 
             if not dry_run:
@@ -399,6 +530,9 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                 print(f"[Orchestrator] Generated CMake Integration helper: {cmake_file}")
         except Exception as e:
             print(f"[Warning] Failed to write GeneratedMocks.cmake: {e}", file=sys.stderr)
+
+        # 6b. Generate Standalone CMake files
+        generate_standalone_cmake(output_dir, project_root, cxx_standard, generated_files, verbose)
 
     # Print clean dashboard summary
     print("\n" + "="*50)

@@ -48,15 +48,19 @@ class TestOrchestrator(unittest.TestCase):
         
         # Check generated files
         gen_files = result["generated_files"]
-        self.assertEqual(len(gen_files), 3)
+        self.assertEqual(len(gen_files), 5)
         
         mock_hdr = os.path.join(self.output_dir, "IService.h")
         fixture_cpp = os.path.join(self.output_dir, "test_IService.cpp")
         cmake_file = os.path.join(self.output_dir, "GeneratedMocks.cmake")
+        standalone_cmake = os.path.join(self.output_dir, "CMakeLists.txt")
+        main_cpp = os.path.join(self.output_dir, "main.cpp")
         
         self.assertIn(mock_hdr, gen_files)
         self.assertIn(fixture_cpp, gen_files)
         self.assertIn(cmake_file, gen_files)
+        self.assertIn(standalone_cmake, gen_files)
+        self.assertIn(main_cpp, gen_files)
         
         # Verify mock header content
         with open(mock_hdr, "r", encoding="utf-8") as f:
@@ -301,6 +305,47 @@ class TestOrchestrator(unittest.TestCase):
         # Scanned/processed headers should NOT include the header inside nested_output_dir
         processed_basenames = [os.path.basename(f) for f in result["processed_headers"]]
         self.assertNotIn("ShouldBeExcluded.h", processed_basenames)
+
+    def test_run_pipeline_with_checklist_filter(self):
+        # Create a header file with multiple classes and methods
+        header_path = os.path.join(self.project_root, "FilterTest.h")
+        header_content = """
+        class ClassA {
+        public:
+            virtual void MethodA1() = 0;
+            virtual void MethodA2() = 0;
+        };
+        class ClassB {
+        public:
+            virtual void MethodB1() = 0;
+        };
+        """
+        with open(header_path, "w", encoding="utf-8") as f:
+            f.write(header_content)
+            
+        # We only want to generate mocks for ClassA and only for MethodA1
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=header_path,
+            checklist_filter={"ClassA": ["MethodA1"]},
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        
+        mock_hdr = os.path.join(self.output_dir, "FilterTest.h")
+        self.assertTrue(os.path.exists(mock_hdr))
+        with open(mock_hdr, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        # ClassA should be mocked with MethodA1
+        self.assertIn("class MockClassA", content)
+        self.assertIn("MOCK_METHOD(void, MethodA1", content)
+        # MethodA2 should be filtered out
+        self.assertNotIn("MethodA2", content)
+        # ClassB should be filtered out completely
+        self.assertNotIn("MockClassB", content)
 
 if __name__ == "__main__":
     unittest.main()

@@ -531,7 +531,7 @@ def generate_mock_header(cpp_class, original_header_name, keep_class_name=False)
     ast.classes.append(cpp_class)
     return generate_mock_header_from_ast(ast, original_header_name, keep_class_name)
 
-def generate_test_fixture(cpp_class, mock_header_path, original_header_name, keep_class_name=False, cpp_file_path=None):
+def generate_test_fixture(cpp_class, mock_header_path, original_header_name, keep_class_name=False, cpp_file_path=None, alias_map=None):
     """
     Generates a standard GTest unit test fixture file string.
     """
@@ -580,7 +580,7 @@ def generate_test_fixture(cpp_class, mock_header_path, original_header_name, kee
     lines.append("")
     
     # Generate test cases using Unit Test Converter
-    scenarios = analyze_cpp_file(cpp_file_path, cpp_class)
+    scenarios = analyze_cpp_file(cpp_file_path, cpp_class, alias_map=alias_map)
     test_cases_str = ""
     if scenarios:
         test_cases_str = convert_scenarios_to_gtest(scenarios, cpp_class.name, full_mock_name)

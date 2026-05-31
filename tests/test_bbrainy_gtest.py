@@ -111,5 +111,38 @@ class TestBBrainyGTest(unittest.TestCase):
         self.assertTrue(any("Database* db = &mock_db;" in decl for decl in pos.arrange_statements))
         self.assertTrue(any("EXPECT_CALL(mock_db, query(::testing::_))" in decl for decl in pos.arrange_statements))
 
+    def test_type_alias_resolution(self):
+        from gtest_migration_factory.parser.bbrainy_gtest import extract_type_aliases, resolve_type
+        # Test using
+        alias_map = extract_type_aliases([
+            {"is_special": True, "text": "using MyInt = int;"},
+            {"is_special": True, "text": "using DoubleAlias = double;"}
+        ], [
+            {"text": "typedef MyInt CountType;"}
+        ])
+        
+        self.assertEqual(alias_map.get("MyInt"), "int")
+        self.assertEqual(alias_map.get("DoubleAlias"), "double")
+        self.assertEqual(alias_map.get("CountType"), "MyInt")
+        
+        # Test recursive resolution
+        self.assertEqual(resolve_type("CountType", alias_map), "int")
+        self.assertEqual(resolve_type("const CountType&", alias_map), "const int&")
+
+    def test_container_default_values(self):
+        method = Method("ProcessVectors", "void", [
+            {"type": "const std::vector<int>&", "name": "vec_int"},
+            {"type": "std::map<std::string, bool>", "name": "map_val"}
+        ])
+        
+        scenarios = analyze_method_body(method)
+        self.assertEqual(len(scenarios), 1)
+        pos = scenarios[0]
+        
+        # Verify vector non-empty initializer
+        self.assertTrue(any("std::vector<int> vec_int = {1, 2, 3};" in decl for decl in pos.arrange_statements))
+        # Verify map non-empty initializer
+        self.assertTrue(any('std::map<std::string, bool> map_val = {{"key1", true}};' in decl or 'std::map<std::string, bool> map_val = {{"key1", true}};' in decl.replace(" ", "") for decl in pos.arrange_statements))
+
 if __name__ == "__main__":
     unittest.main()
