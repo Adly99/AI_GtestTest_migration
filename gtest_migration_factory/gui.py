@@ -36,7 +36,7 @@ class GTestMigrationGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("GTest Unit Test Migration Factory")
-        self.root.geometry("880x820")
+        self.root.geometry("1140x660")
         self.root.configure(bg=BG_COLOR)
         
         # Configure Styles
@@ -64,13 +64,13 @@ class GTestMigrationGUI:
         )
 
         self.style.configure('Run.TButton', 
-            background=ACCENT_COLOR, 
+            background=SUCCESS_COLOR, 
             foreground=SURFACE_COLOR, 
             font=('Arial', 11, 'bold'),
             padding=8
         )
         self.style.map('Run.TButton',
-            background=[('active', SUCCESS_COLOR), ('pressed', '#89dceb')],
+            background=[('active', '#a6e3a1'), ('pressed', '#89dceb')],
             foreground=[('active', SURFACE_COLOR), ('pressed', SURFACE_COLOR)]
         )
 
@@ -88,60 +88,68 @@ class GTestMigrationGUI:
 
     def setup_ui(self):
         # Main Title Header
-        title_frame = tk.Frame(self.root, bg=SURFACE_COLOR, height=60)
+        title_frame = tk.Frame(self.root, bg=SURFACE_COLOR, height=50)
         title_frame.pack(fill=tk.X, side=tk.TOP)
         title_frame.pack_propagate(False)
         
         title_label = tk.Label(
             title_frame, 
             text="AI Unit Test Migration Factory", 
-            font=("Arial", 16, "bold"), 
+            font=("Arial", 14, "bold"), 
             bg=SURFACE_COLOR, 
             fg=ACCENT_COLOR
         )
-        title_label.pack(side=tk.LEFT, padx=20, pady=15)
+        title_label.pack(side=tk.LEFT, padx=20, pady=10)
         
         subtitle_label = tk.Label(
             title_frame, 
-            text="Deterministic Steps 0, 1, 2 (Enhanced)", 
-            font=("Arial", 10, "italic"), 
+            text="Steps 0 - 4 + Orchestrated Feedback Loop", 
+            font=("Arial", 9, "italic"), 
             bg=SURFACE_COLOR, 
             fg="#a6adc8"
         )
-        subtitle_label.pack(side=tk.RIGHT, padx=20, pady=20)
+        subtitle_label.pack(side=tk.RIGHT, padx=20, pady=15)
 
-        # Main Layout Container
+        # Main Layout Container (Side-by-Side Panels)
         main_container = ttk.Frame(self.root)
-        main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+
+        # Left Column: Configuration & Controls Panel
+        left_panel = ttk.Frame(main_container)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 10))
+
+        # Right Column: Console Logs & Code Preview Notebook
+        right_panel = ttk.Frame(main_container)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
         # ----------------------------------------------------
-        # 1. PATHS SECTION PANEL
+        # 1. PATHS SECTION PANEL (LEFT PANEL)
         # ----------------------------------------------------
-        paths_frame = ttk.LabelFrame(main_container, text=" Configuration & Paths ")
-        paths_frame.pack(fill=tk.X, pady=4, padx=5)
+        paths_frame = ttk.LabelFrame(left_panel, text=" Configuration & Paths ")
+        paths_frame.pack(fill=tk.X, pady=2, padx=2)
 
         # Project Root Selection
-        ttk.Label(paths_frame, text="Project Root:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=4)
+        ttk.Label(paths_frame, text="Project Root:").grid(row=0, column=0, sticky=tk.W, padx=8, pady=2)
         self.project_root_var = tk.StringVar(value=os.getcwd())
-        self.project_root_entry = tk.Entry(paths_frame, textvariable=self.project_root_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.project_root_entry.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=4)
-        ttk.Button(paths_frame, text="Browse...", command=self.browse_project_root).grid(row=0, column=2, padx=10, pady=4)
+        self.project_root_entry = tk.Entry(paths_frame, textvariable=self.project_root_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=32)
+        self.project_root_entry.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=2)
+        ttk.Button(paths_frame, text="Browse...", command=self.browse_project_root).grid(row=0, column=2, padx=8, pady=2)
 
         # Output Directory Selection
-        ttk.Label(paths_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=4)
+        ttk.Label(paths_frame, text="Output Dir:").grid(row=1, column=0, sticky=tk.W, padx=8, pady=2)
         self.output_dir_var = tk.StringVar(value=os.path.join(os.getcwd(), "tests", "generated_mocks"))
-        self.output_dir_entry = tk.Entry(paths_frame, textvariable=self.output_dir_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.output_dir_entry.grid(row=1, column=1, sticky=tk.EW, padx=5, pady=4)
-        ttk.Button(paths_frame, text="Browse...", command=self.browse_output_dir).grid(row=1, column=2, padx=10, pady=4)
+        self.output_dir_entry = tk.Entry(paths_frame, textvariable=self.output_dir_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=32)
+        self.output_dir_entry.grid(row=1, column=1, sticky=tk.EW, padx=5, pady=2)
+        ttk.Button(paths_frame, text="Browse...", command=self.browse_output_dir).grid(row=1, column=2, padx=8, pady=2)
 
         # Specific Header File (Optional)
-        ttk.Label(paths_frame, text="Specific Header:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=4)
+        ttk.Label(paths_frame, text="Specific Header:").grid(row=2, column=0, sticky=tk.W, padx=8, pady=2)
         self.file_path_var = tk.StringVar()
-        self.file_path_entry = tk.Entry(paths_frame, textvariable=self.file_path_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.file_path_entry.grid(row=2, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.file_path_entry = tk.Entry(paths_frame, textvariable=self.file_path_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=32)
+        self.file_path_entry.grid(row=2, column=1, sticky=tk.EW, padx=5, pady=2)
         
         self.btn_frame = ttk.Frame(paths_frame)
-        self.btn_frame.grid(row=2, column=2, padx=10, pady=4, sticky=tk.W)
+        self.btn_frame.grid(row=2, column=2, padx=8, pady=2, sticky=tk.W)
         self.browse_file_btn = ttk.Button(self.btn_frame, text="Browse...", command=self.browse_file)
         self.browse_file_btn.pack(side=tk.LEFT, padx=(0, 2))
         self.clear_file_btn = ttk.Button(self.btn_frame, text="Clear", command=self.clear_file)
@@ -150,10 +158,10 @@ class GTestMigrationGUI:
         paths_frame.columnconfigure(1, weight=1)
 
         # ----------------------------------------------------
-        # 2. TARGET MODE SECTION
+        # 2. TARGET MODE SECTION (LEFT PANEL)
         # ----------------------------------------------------
-        target_frame = ttk.LabelFrame(main_container, text=" Target Selection Mode ")
-        target_frame.pack(fill=tk.X, pady=4, padx=5)
+        target_frame = ttk.LabelFrame(left_panel, text=" Target Selection Mode ")
+        target_frame.pack(fill=tk.X, pady=2, padx=2)
 
         self.target_mode_var = tk.StringVar(value="git")
         
@@ -164,7 +172,7 @@ class GTestMigrationGUI:
             value="git",
             command=self.on_target_mode_changed
         )
-        self.radio_git.pack(side=tk.LEFT, padx=15, pady=4)
+        self.radio_git.pack(anchor=tk.W, padx=15, pady=2)
 
         self.radio_all = ttk.Radiobutton(
             target_frame, 
@@ -173,7 +181,7 @@ class GTestMigrationGUI:
             value="all",
             command=self.on_target_mode_changed
         )
-        self.radio_all.pack(side=tk.LEFT, padx=15, pady=4)
+        self.radio_all.pack(anchor=tk.W, padx=15, pady=2)
 
         self.radio_file = ttk.Radiobutton(
             target_frame, 
@@ -182,75 +190,76 @@ class GTestMigrationGUI:
             value="file",
             command=self.on_target_mode_changed
         )
-        self.radio_file.pack(side=tk.LEFT, padx=15, pady=4)
+        self.radio_file.pack(anchor=tk.W, padx=15, pady=2)
 
         # ----------------------------------------------------
-        # 3. ADVANCED OPTIONS SECTION (GRID LAYOUT)
+        # 3. ADVANCED OPTIONS SECTION (LEFT PANEL - COMPACTED GRID)
         # ----------------------------------------------------
-        advanced_frame = ttk.LabelFrame(main_container, text=" Advanced Customizations ")
-        advanced_frame.pack(fill=tk.X, pady=4, padx=5)
+        advanced_frame = ttk.LabelFrame(left_panel, text=" Advanced Customizations ")
+        advanced_frame.pack(fill=tk.X, pady=2, padx=2)
 
-        # Row 0: Exclude patterns & C++ Standard
-        ttk.Label(advanced_frame, text="Exclude Patterns:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=4)
+        # Row 0: Exclude patterns (Takes whole width)
+        ttk.Label(advanced_frame, text="Exclude Patterns:").grid(row=0, column=0, sticky=tk.W, padx=8, pady=2)
         self.exclude_patterns_var = tk.StringVar(value="")
         self.exclude_patterns_entry = tk.Entry(advanced_frame, textvariable=self.exclude_patterns_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.exclude_patterns_entry.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.exclude_patterns_entry.grid(row=0, column=1, columnspan=3, sticky=tk.EW, padx=5, pady=2)
 
-        ttk.Label(advanced_frame, text="C++ Standard:").grid(row=0, column=2, sticky=tk.W, padx=15, pady=4)
+        # Row 1: C++ Standard & Mock Prefix
+        ttk.Label(advanced_frame, text="C++ Standard:").grid(row=1, column=0, sticky=tk.W, padx=8, pady=2)
         self.cxx_standard_var = tk.StringVar(value="Auto-detect")
         cxx_dropdown = ttk.Combobox(
             advanced_frame, 
             textvariable=self.cxx_standard_var, 
             values=["Auto-detect", "11", "14", "17", "20"],
             state="readonly",
-            width=12
+            width=10
         )
-        cxx_dropdown.grid(row=0, column=3, sticky=tk.W, padx=5, pady=4)
+        cxx_dropdown.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
-        # Row 1: Mock Prefix & Mock Suffix
-        ttk.Label(advanced_frame, text="Mock Prefix:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=4)
+        ttk.Label(advanced_frame, text="Mock Prefix:").grid(row=1, column=2, sticky=tk.W, padx=10, pady=2)
         self.mock_prefix_var = tk.StringVar(value="Mock")
-        self.mock_prefix_entry = tk.Entry(advanced_frame, textvariable=self.mock_prefix_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.mock_prefix_entry.grid(row=1, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.mock_prefix_entry = tk.Entry(advanced_frame, textvariable=self.mock_prefix_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=12)
+        self.mock_prefix_entry.grid(row=1, column=3, sticky=tk.EW, padx=5, pady=2)
 
-        ttk.Label(advanced_frame, text="Mock Suffix:").grid(row=1, column=2, sticky=tk.W, padx=15, pady=4)
+        # Row 2: Mock Suffix & Namespace Filter
+        ttk.Label(advanced_frame, text="Mock Suffix:").grid(row=2, column=0, sticky=tk.W, padx=8, pady=2)
         self.mock_suffix_var = tk.StringVar(value="")
-        self.mock_suffix_entry = tk.Entry(advanced_frame, textvariable=self.mock_suffix_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.mock_suffix_entry.grid(row=1, column=3, sticky=tk.EW, padx=5, pady=4)
+        self.mock_suffix_entry = tk.Entry(advanced_frame, textvariable=self.mock_suffix_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=12)
+        self.mock_suffix_entry.grid(row=2, column=1, sticky=tk.EW, padx=5, pady=2)
 
-        # Row 2: Namespace Filter & Custom Includes
-        ttk.Label(advanced_frame, text="Namespace Filter:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=4)
+        ttk.Label(advanced_frame, text="Namespace Filter:").grid(row=2, column=2, sticky=tk.W, padx=10, pady=2)
         self.namespace_filter_var = tk.StringVar(value="")
-        self.namespace_filter_entry = tk.Entry(advanced_frame, textvariable=self.namespace_filter_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.namespace_filter_entry.grid(row=2, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.namespace_filter_entry = tk.Entry(advanced_frame, textvariable=self.namespace_filter_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=12)
+        self.namespace_filter_entry.grid(row=2, column=3, sticky=tk.EW, padx=5, pady=2)
 
-        ttk.Label(advanced_frame, text="Custom Includes:").grid(row=2, column=2, sticky=tk.W, padx=15, pady=4)
+        # Row 3: Custom Includes
+        ttk.Label(advanced_frame, text="Custom Includes:").grid(row=3, column=0, sticky=tk.W, padx=8, pady=2)
         self.custom_includes_var = tk.StringVar(value="")
         self.custom_includes_entry = tk.Entry(advanced_frame, textvariable=self.custom_includes_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.custom_includes_entry.grid(row=2, column=3, sticky=tk.EW, padx=5, pady=4)
+        self.custom_includes_entry.grid(row=3, column=1, columnspan=3, sticky=tk.EW, padx=5, pady=2)
 
-        # Row 3: Compile Commands
-        ttk.Label(advanced_frame, text="Compile Commands:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=4)
+        # Row 4: Compile Commands
+        ttk.Label(advanced_frame, text="Compile Cmds:").grid(row=4, column=0, sticky=tk.W, padx=8, pady=2)
         self.compile_commands_var = tk.StringVar(value="")
         self.compile_commands_entry = tk.Entry(advanced_frame, textvariable=self.compile_commands_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT)
-        self.compile_commands_entry.grid(row=3, column=1, columnspan=3, sticky=tk.EW, padx=5, pady=4)
+        self.compile_commands_entry.grid(row=4, column=1, columnspan=3, sticky=tk.EW, padx=5, pady=2)
 
         advanced_frame.columnconfigure(1, weight=1)
         advanced_frame.columnconfigure(3, weight=1)
 
         # ----------------------------------------------------
-        # 4. ACTION TOGGLES PANEL
+        # 4. ACTION TOGGLES PANEL (LEFT PANEL - GRID)
         # ----------------------------------------------------
-        toggles_frame = ttk.LabelFrame(main_container, text=" Action Flags ")
-        toggles_frame.pack(fill=tk.X, pady=4, padx=5)
+        toggles_frame = ttk.LabelFrame(left_panel, text=" Action Flags ")
+        toggles_frame.pack(fill=tk.X, pady=2, padx=2)
 
         self.keep_class_name_var = tk.BooleanVar(value=False)
         self.keep_class_name_cb = ttk.Checkbutton(
             toggles_frame, 
-            text="Keep Class Name (swap stub)", 
+            text="Keep Class Name (swap)", 
             variable=self.keep_class_name_var
         )
-        self.keep_class_name_cb.grid(row=0, column=0, sticky=tk.W, padx=15, pady=4)
+        self.keep_class_name_cb.grid(row=0, column=0, sticky=tk.W, padx=10, pady=2)
 
         self.no_override_var = tk.BooleanVar(value=False)
         self.no_override_cb = ttk.Checkbutton(
@@ -258,7 +267,7 @@ class GTestMigrationGUI:
             text="Omit Override Keyword", 
             variable=self.no_override_var
         )
-        self.no_override_cb.grid(row=0, column=1, sticky=tk.W, padx=15, pady=4)
+        self.no_override_cb.grid(row=0, column=1, sticky=tk.W, padx=10, pady=2)
 
         self.clang_format_var = tk.BooleanVar(value=False)
         self.clang_format_cb = ttk.Checkbutton(
@@ -266,7 +275,7 @@ class GTestMigrationGUI:
             text="Run Clang-Format", 
             variable=self.clang_format_var
         )
-        self.clang_format_cb.grid(row=0, column=2, sticky=tk.W, padx=15, pady=4)
+        self.clang_format_cb.grid(row=1, column=0, sticky=tk.W, padx=10, pady=2)
 
         self.verify_compile_var = tk.BooleanVar(value=False)
         self.verify_compile_cb = ttk.Checkbutton(
@@ -274,7 +283,7 @@ class GTestMigrationGUI:
             text="Verify Compile Check", 
             variable=self.verify_compile_var
         )
-        self.verify_compile_cb.grid(row=1, column=0, sticky=tk.W, padx=15, pady=4)
+        self.verify_compile_cb.grid(row=1, column=1, sticky=tk.W, padx=10, pady=2)
 
         self.dry_run_var = tk.BooleanVar(value=False)
         self.dry_run_cb = ttk.Checkbutton(
@@ -282,7 +291,7 @@ class GTestMigrationGUI:
             text="Dry Run Mode", 
             variable=self.dry_run_var
         )
-        self.dry_run_cb.grid(row=1, column=1, sticky=tk.W, padx=15, pady=4)
+        self.dry_run_cb.grid(row=2, column=0, sticky=tk.W, padx=10, pady=2)
 
         self.verbose_var = tk.BooleanVar(value=True)
         self.verbose_cb = ttk.Checkbutton(
@@ -290,16 +299,72 @@ class GTestMigrationGUI:
             text="Verbose Logs", 
             variable=self.verbose_var
         )
-        self.verbose_cb.grid(row=1, column=2, sticky=tk.W, padx=15, pady=4)
+        self.verbose_cb.grid(row=2, column=1, sticky=tk.W, padx=10, pady=2)
 
-        for col in range(3):
+        for col in range(2):
             toggles_frame.columnconfigure(col, weight=1)
 
         # ----------------------------------------------------
-        # 5. DUAL-TAB CONSOLE & CODE PREVIEW
+        # 5. CONTROL & RUN ACTION PANEL (LEFT PANEL - AT THE BOTTOM)
         # ----------------------------------------------------
-        self.notebook = ttk.Notebook(main_container)
-        self.notebook.pack(fill=tk.BOTH, expand=True, pady=4, padx=5)
+        control_frame = ttk.LabelFrame(left_panel, text=" Execution & Dashboard ")
+        control_frame.pack(fill=tk.BOTH, expand=True, pady=4, padx=2)
+
+        # Help / Instructions label
+        instructions_text = (
+            "👉 **How to execute migration:**\n"
+            "1. Choose a target mode (Git status, All, or Specific file)\n"
+            "2. Enable 'Verify Compile Check' to validate & auto-heal stubs.\n"
+            "3. Click 'Execute Migration' below to run!"
+        )
+        self.instructions_lbl = tk.Label(
+            control_frame, 
+            text=instructions_text, 
+            bg=BG_COLOR, 
+            fg="#a6adc8", 
+            justify=tk.LEFT,
+            font=("Arial", 9, "italic"),
+            anchor=tk.W
+        )
+        self.instructions_lbl.pack(fill=tk.X, padx=10, pady=(5, 10))
+
+        # Status Panel
+        status_subframe = ttk.Frame(control_frame)
+        status_subframe.pack(fill=tk.X, padx=10, pady=2)
+        
+        self.status_label = tk.Label(
+            status_subframe, 
+            text="Status: Ready ●", 
+            bg=BG_COLOR, 
+            fg=SUCCESS_COLOR,
+            font=("Arial", 10, "bold")
+        )
+        self.status_label.pack(side=tk.LEFT)
+
+        # Run Buttons Frame
+        btns_subframe = ttk.Frame(control_frame)
+        btns_subframe.pack(fill=tk.X, padx=10, pady=(10, 5))
+
+        self.run_button = ttk.Button(
+            btns_subframe, 
+            text="Execute Migration", 
+            style="Run.TButton",
+            command=self.execute_pipeline
+        )
+        self.run_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        self.preview_button = ttk.Button(
+            btns_subframe,
+            text="Preview Mock",
+            command=self.preview_mock
+        )
+        self.preview_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+
+        # ----------------------------------------------------
+        # 6. DUAL-TAB CONSOLE & CODE PREVIEW (RIGHT PANEL)
+        # ----------------------------------------------------
+        self.notebook = ttk.Notebook(right_panel)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
 
         # Tab 1: Execution Console Frame
         console_frame = ttk.Frame(self.notebook)
