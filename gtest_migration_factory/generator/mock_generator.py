@@ -79,11 +79,14 @@ def generate_mock_header_from_ast(ast, original_header_name, keep_class_name=Fal
     
     # 3. Preserve Original Includes (Step 2)
     ignored_includes = ('"gmock/gmock.h"', '"gtest/gtest.h"', '<gmock/gmock.h>', '<gtest/gtest.h>')
+    added_includes = False
     for inc in ast.includes:
-        if inc not in ignored_includes:
+        header_path = inc.replace("#include", "").strip()
+        if header_path not in ignored_includes:
             lines.append(f"{inc} // Original include - preserved.")
+            added_includes = True
             
-    if ast.includes:
+    if added_includes:
         lines.append("")
 
     # Inject Custom Includes

@@ -26,3 +26,4 @@ Thumbs.db
 .gemini/
 temp/
 tmp/
+.gtest_factory_config.json
