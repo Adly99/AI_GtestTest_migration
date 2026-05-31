@@ -296,7 +296,39 @@ class GTestMigrationGUI:
             toggles_frame.columnconfigure(col, weight=1)
 
         # ----------------------------------------------------
-        # 5. DUAL-TAB CONSOLE & CODE PREVIEW
+        # 6. RUN BUTTONS & STATUS (Packed first to anchor to the bottom)
+        # ----------------------------------------------------
+        bottom_frame = ttk.Frame(main_container)
+        bottom_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=4)
+
+        self.status_label = tk.Label(
+            bottom_frame, 
+            text="Status: Ready", 
+            bg=BG_COLOR, 
+            fg=TEXT_COLOR,
+            font=("Arial", 10, "bold")
+        )
+        self.status_label.pack(side=tk.LEFT, padx=10)
+
+        # Execute Migration Button
+        self.run_button = ttk.Button(
+            bottom_frame, 
+            text="Execute Migration", 
+            style="Run.TButton",
+            command=self.execute_pipeline
+        )
+        self.run_button.pack(side=tk.RIGHT, padx=5)
+
+        # Preview Mock Button
+        self.preview_button = ttk.Button(
+            bottom_frame,
+            text="Preview Mock",
+            command=self.preview_mock
+        )
+        self.preview_button.pack(side=tk.RIGHT, padx=5)
+
+        # ----------------------------------------------------
+        # 5. DUAL-TAB CONSOLE & CODE PREVIEW (Packed to expand in the remaining space)
         # ----------------------------------------------------
         self.notebook = ttk.Notebook(main_container)
         self.notebook.pack(fill=tk.BOTH, expand=True, pady=4, padx=5)
@@ -340,38 +372,6 @@ class GTestMigrationGUI:
         preview_scrollbar = ttk.Scrollbar(preview_frame, command=self.preview_text.yview)
         preview_scrollbar.pack(fill=tk.Y, side=tk.RIGHT)
         self.preview_text.configure(yscrollcommand=preview_scrollbar.set)
-
-        # ----------------------------------------------------
-        # 6. RUN BUTTONS & STATUS
-        # ----------------------------------------------------
-        bottom_frame = ttk.Frame(main_container)
-        bottom_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=4)
-
-        self.status_label = tk.Label(
-            bottom_frame, 
-            text="Status: Ready", 
-            bg=BG_COLOR, 
-            fg=TEXT_COLOR,
-            font=("Arial", 10, "bold")
-        )
-        self.status_label.pack(side=tk.LEFT, padx=10)
-
-        # Execute Migration Button
-        self.run_button = ttk.Button(
-            bottom_frame, 
-            text="Execute Migration", 
-            style="Run.TButton",
-            command=self.execute_pipeline
-        )
-        self.run_button.pack(side=tk.RIGHT, padx=5)
-
-        # Preview Mock Button
-        self.preview_button = ttk.Button(
-            bottom_frame,
-            text="Preview Mock",
-            command=self.preview_mock
-        )
-        self.preview_button.pack(side=tk.RIGHT, padx=5)
 
     def on_target_mode_changed(self):
         mode = self.target_mode_var.get()
