@@ -157,6 +157,20 @@ class GTestMigrationGUI:
         self.clear_file_btn = ttk.Button(self.btn_frame, text="Clear", command=self.clear_file)
         self.clear_file_btn.pack(side=tk.LEFT)
 
+        # Compiler Path Selection
+        ttk.Label(paths_frame, text="Compiler Path:").grid(row=3, column=0, sticky=tk.W, padx=8, pady=2)
+        self.custom_compiler_path_var = tk.StringVar(value="")
+        self.custom_compiler_path_entry = tk.Entry(paths_frame, textvariable=self.custom_compiler_path_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=32)
+        self.custom_compiler_path_entry.grid(row=3, column=1, sticky=tk.EW, padx=5, pady=2)
+        ttk.Button(paths_frame, text="Browse...", command=self.browse_custom_compiler).grid(row=3, column=2, padx=8, pady=2)
+
+        # Clang-Format Path Selection
+        ttk.Label(paths_frame, text="Clang-Fmt Path:").grid(row=4, column=0, sticky=tk.W, padx=8, pady=2)
+        self.custom_clang_format_path_var = tk.StringVar(value="")
+        self.custom_clang_format_path_entry = tk.Entry(paths_frame, textvariable=self.custom_clang_format_path_var, bg=INPUT_BG, fg=TEXT_COLOR, insertbackground=TEXT_COLOR, bd=1, relief=tk.FLAT, width=32)
+        self.custom_clang_format_path_entry.grid(row=4, column=1, sticky=tk.EW, padx=5, pady=2)
+        ttk.Button(paths_frame, text="Browse...", command=self.browse_custom_clang_format).grid(row=4, column=2, padx=8, pady=2)
+
         paths_frame.columnconfigure(1, weight=1)
 
         # ----------------------------------------------------
@@ -303,6 +317,14 @@ class GTestMigrationGUI:
         )
         self.verbose_cb.grid(row=2, column=1, sticky=tk.W, padx=10, pady=2)
 
+        self.preserve_structure_var = tk.BooleanVar(value=True)
+        self.preserve_structure_cb = ttk.Checkbutton(
+            toggles_frame, 
+            text="Mirror Folders", 
+            variable=self.preserve_structure_var
+        )
+        self.preserve_structure_cb.grid(row=3, column=0, sticky=tk.W, padx=10, pady=2)
+
         for col in range(2):
             toggles_frame.columnconfigure(col, weight=1)
 
@@ -342,6 +364,32 @@ class GTestMigrationGUI:
             font=("Arial", 10, "bold")
         )
         self.status_label.pack(side=tk.LEFT)
+
+        # Metrics Panel
+        metrics_subframe = ttk.LabelFrame(control_frame, text=" Execution Metrics ")
+        metrics_subframe.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.metric_scanned_val = tk.StringVar(value="0")
+        self.metric_mocks_val = tk.StringVar(value="0")
+        self.metric_fixtures_val = tk.StringVar(value="0")
+        self.metric_skipped_val = tk.StringVar(value="0")
+        self.metric_clashes_val = tk.StringVar(value="0")
+        
+        # Grid of labels
+        ttk.Label(metrics_subframe, text="Scanned Headers:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        tk.Label(metrics_subframe, textvariable=self.metric_scanned_val, bg=BG_COLOR, fg=ACCENT_COLOR, font=("Arial", 9, "bold")).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        ttk.Label(metrics_subframe, text="Generated Mocks:").grid(row=0, column=2, sticky=tk.W, padx=15, pady=2)
+        tk.Label(metrics_subframe, textvariable=self.metric_mocks_val, bg=BG_COLOR, fg=SUCCESS_COLOR, font=("Arial", 9, "bold")).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        
+        ttk.Label(metrics_subframe, text="Generated Fixtures:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        tk.Label(metrics_subframe, textvariable=self.metric_fixtures_val, bg=BG_COLOR, fg=SUCCESS_COLOR, font=("Arial", 9, "bold")).grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        ttk.Label(metrics_subframe, text="Empty Skipped:").grid(row=1, column=2, sticky=tk.W, padx=15, pady=2)
+        tk.Label(metrics_subframe, textvariable=self.metric_skipped_val, bg=BG_COLOR, fg="#a6adc8", font=("Arial", 9, "bold")).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        
+        ttk.Label(metrics_subframe, text="Filename Clashes:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        tk.Label(metrics_subframe, textvariable=self.metric_clashes_val, bg=BG_COLOR, fg=ERROR_COLOR, font=("Arial", 9, "bold")).grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
 
         # Run Buttons Frame
         btns_subframe = ttk.Frame(control_frame)
@@ -540,6 +588,22 @@ class GTestMigrationGUI:
     def clear_file(self):
         self.file_path_var.set("")
 
+    def browse_custom_compiler(self):
+        path = filedialog.askopenfilename(
+            title="Select Compiler Binary",
+            filetypes=[("Executable Files", "*.exe"), ("All Files", "*.*")] if sys.platform == "win32" else [("All Files", "*")]
+        )
+        if path:
+            self.custom_compiler_path_var.set(os.path.abspath(path))
+
+    def browse_custom_clang_format(self):
+        path = filedialog.askopenfilename(
+            title="Select Clang-Format Binary",
+            filetypes=[("Executable Files", "*.exe"), ("All Files", "*.*")] if sys.platform == "win32" else [("All Files", "*")]
+        )
+        if path:
+            self.custom_clang_format_path_var.set(os.path.abspath(path))
+
     # ----------------------------------------------------
     # PREVIEW ACTION
     # ----------------------------------------------------
@@ -684,10 +748,21 @@ class GTestMigrationGUI:
                 custom_includes=custom_inc,
                 namespace_filter=namespace_filter,
                 compile_commands=compile_cmds,
-                verify_compile=verify_compile
+                verify_compile=verify_compile,
+                custom_compiler_path=self.custom_compiler_path_var.get().strip() or None,
+                custom_clang_format_path=self.custom_clang_format_path_var.get().strip() or None,
+                preserve_structure=self.preserve_structure_var.get()
             )
 
             if result["status"] == "success":
+                # Update visual metrics dashboard
+                metrics = result.get("metrics", {})
+                self.metric_scanned_val.set(str(metrics.get("scanned", 0)))
+                self.metric_mocks_val.set(str(metrics.get("mocks", 0)))
+                self.metric_fixtures_val.set(str(metrics.get("fixtures", 0)))
+                self.metric_skipped_val.set(str(metrics.get("skipped_empty", 0)))
+                self.metric_clashes_val.set(str(metrics.get("clashes", 0)))
+
                 if dry_run:
                     self.status_label.configure(text="Status: Dry Run Done! ●", fg=SUCCESS_COLOR)
                     print(f"\nDry run complete. {len(result['generated_files'])} files would be processed/written.")
@@ -744,7 +819,10 @@ class GTestMigrationGUI:
                 "clang_format": self.clang_format_var.get(),
                 "verify_compile": self.verify_compile_var.get(),
                 "dry_run": self.dry_run_var.get(),
-                "verbose": self.verbose_var.get()
+                "verbose": self.verbose_var.get(),
+                "custom_compiler_path": self.custom_compiler_path_var.get(),
+                "custom_clang_format_path": self.custom_clang_format_path_var.get(),
+                "preserve_structure": self.preserve_structure_var.get()
             }
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
@@ -777,6 +855,9 @@ class GTestMigrationGUI:
                 if "verify_compile" in config: self.verify_compile_var.set(config["verify_compile"])
                 if "dry_run" in config: self.dry_run_var.set(config["dry_run"])
                 if "verbose" in config: self.verbose_var.set(config["verbose"])
+                if "custom_compiler_path" in config: self.custom_compiler_path_var.set(config["custom_compiler_path"])
+                if "custom_clang_format_path" in config: self.custom_clang_format_path_var.set(config["custom_clang_format_path"])
+                if "preserve_structure" in config: self.preserve_structure_var.set(config["preserve_structure"])
             except Exception:
                 pass
 

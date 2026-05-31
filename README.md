@@ -27,6 +27,11 @@ This tool is designed to work in two ways:
 6. **Header-Replacement Mocking (Step 2)**:
    * Saves mock header files with the **exact same filename** as original headers, allowing you to swap production dependencies with mock stubs during test compilation using include path order.
    * Class naming flexibility: can generate mocks inheriting from interfaces or type stubs replacing the class definition directly (keeping the identical class name).
+7. **Advanced Architectural Enhancements**:
+    * **Directory Structure Mirroring**: Preserves the original repository sub-directory layout inside the output folder (e.g., `mocks/src/core/Worker.h` instead of flattening them into `mocks/Worker.h`). This eliminates include resolution collision and file overwrite risks when multiple files have identical basenames.
+    * **Custom Toolchain Binary Paths**: Set custom paths for compiler binaries (e.g., specific `g++` or `cl` paths) for syntax/verify checks, and custom `clang-format` binaries. Settings are automatically saved/loaded in the desktop GUI's `.gtest_factory_config.json`.
+    * **Duplicate Filename Warnings**: Proactively scans the target repository for duplicate C++ header names in different folders and warns the user about overwrite risks, with automated suggestions for folders to add to Exclude Patterns (e.g., `build`, `out`).
+    * **Execution Dashboard Summary**: Displays a unified metrics summary (Scanned headers, Generated mocks, Generated fixtures, Skipped empty, Filename clashes) both on the command line terminal and inside a visual panel in the Tkinter desktop GUI.
 
 ---
 
@@ -223,6 +228,9 @@ python -m gtest_migration_factory --output-dir <path_to_save_mocks> [options]
 * `--namespace-filter`: Limit mock generation to classes in a specific namespace.
 * `--compile-commands`: Path to `compile_commands.json` database to load include directories from.
 * `--verify-compile`: Run compiler syntax check on generated mocks (requires g++, clang++, or cl in PATH).
+* `--custom-compiler`: Path to custom compiler binary (e.g. `C:\mingw\bin\g++.exe`).
+* `--custom-clang-format`: Path to custom `clang-format` binary.
+* `--no-preserve-structure`: Disable mirroring project source relative directory layout in the output folder (mirroring is enabled by default).
 * `--verbose`: Print extra logging information.
 
 #### Build & Verification Features:

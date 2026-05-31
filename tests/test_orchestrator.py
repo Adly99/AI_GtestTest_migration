@@ -199,5 +199,85 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("TEST_F(AccountTest, Deposit_Success_DefaultBehavior)", content)
         self.assertIn("TEST_F(AccountTest, Deposit_EdgeCase_amountZeroOrLess)", content)
 
+    def test_run_pipeline_preserve_structure(self):
+        # Create a header file in a subdirectory of project root
+        subdir = os.path.join(self.project_root, "src", "core")
+        os.makedirs(subdir, exist_ok=True)
+        header_path = os.path.join(subdir, "Worker.h")
+        with open(header_path, "w", encoding="utf-8") as f:
+            f.write("class Worker { public: virtual void DoWork() = 0; };")
+            
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=header_path,
+            preserve_structure=True,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        
+        # Verify that directories are mirrored: output/src/core/Worker.h and output/src/core/test_Worker.cpp
+        expected_mock_path = os.path.join(self.output_dir, "src", "core", "Worker.h")
+        expected_fixture_path = os.path.join(self.output_dir, "src", "core", "test_Worker.cpp")
+        
+        self.assertTrue(os.path.exists(expected_mock_path))
+        self.assertTrue(os.path.exists(expected_fixture_path))
+        
+        # Verify GeneratedMocks.cmake has relative paths
+        cmake_file = os.path.join(self.output_dir, "GeneratedMocks.cmake")
+        self.assertTrue(os.path.exists(cmake_file))
+        with open(cmake_file, "r", encoding="utf-8") as f:
+            cmake_content = f.read()
+        self.assertIn("${CMAKE_CURRENT_LIST_DIR}/src/core/test_Worker.cpp", cmake_content.replace("\\", "/"))
+
+    @unittest.mock.patch("subprocess.run")
+    def test_custom_compiler_path(self, mock_run):
+        # Setup mock compiler behavior
+        mock_res = unittest.mock.MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+        
+        custom_compiler = os.path.join(self.tmp_dir, "my_special_compiler")
+        
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=self.header_path,
+            verify_compile=True,
+            custom_compiler_path=custom_compiler,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        # Check that the mock run was called with the custom compiler
+        args, kwargs = mock_run.call_args
+        self.assertEqual(args[0][0], custom_compiler)
+
+    @unittest.mock.patch("subprocess.run")
+    def test_custom_clang_format_path(self, mock_run):
+        mock_res = unittest.mock.MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+        custom_clang_fmt = os.path.join(self.tmp_dir, "my_clang_format")
+        
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=self.header_path,
+            clang_format=True,
+            custom_clang_format_path=custom_clang_fmt,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        # Check that subprocess.run was called with my_clang_format
+        called_cmds = [call[0][0] for call in mock_run.call_args_list if call[0][0]]
+        found = False
+        for cmd in called_cmds:
+            if cmd[0] == custom_clang_fmt:
+                found = True
+        self.assertTrue(found)
+
 if __name__ == "__main__":
     unittest.main()

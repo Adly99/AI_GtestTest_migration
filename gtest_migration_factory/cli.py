@@ -125,6 +125,27 @@ def main():
     )
 
     parser.add_argument(
+        "--custom-compiler",
+        type=str,
+        default=None,
+        help="Path to custom compiler binary (e.g. g++, clang++, cl)."
+    )
+
+    parser.add_argument(
+        "--custom-clang-format",
+        type=str,
+        default=None,
+        help="Path to custom clang-format binary."
+    )
+
+    parser.add_argument(
+        "--no-preserve-structure",
+        action="store_false",
+        dest="preserve_structure",
+        help="Disable mirroring project source relative directory layout in the output folder."
+    )
+
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print detailed execution logs."
@@ -175,7 +196,10 @@ def main():
         custom_includes=args.custom_include,
         namespace_filter=args.namespace_filter,
         compile_commands=args.compile_commands,
-        verify_compile=args.verify_compile
+        verify_compile=args.verify_compile,
+        custom_compiler_path=args.custom_compiler,
+        custom_clang_format_path=args.custom_clang_format,
+        preserve_structure=args.preserve_structure
     )
 
     if result["status"] == "success":
