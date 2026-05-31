@@ -1,6 +1,6 @@
-# GTest Unit Test Migration Factory (Steps 0, 1, 2)
+# GTest Unit Test Migration Factory
 
-A portable, zero-dependency C++ code parsing and test generation utility built in pure Python. It automatically scans codebase directories, detects modified files using Git, identifies project C++ standard configurations from build systems, parses C++ class interfaces and declarations, and generates modern C++ GoogleMock headers and GoogleTest fixture templates.
+A portable, zero-dependency C++ code parsing, test scenario analysis, and GoogleTest/GoogleMock code generation factory built in pure Python. It automatically scans codebase directories, detects modified files using Git, identifies project C++ standard configurations from build systems, parses C++ class declarations, extracts execution branch scenarios from C++ source files, and generates modern C++ GoogleMock headers and GoogleTest fixture templates.
 
 This tool is designed to work in two ways:
 1. **Interactive Desktop GUI Mode**: A polished, dark-themed Tkinter interface for local development, configuration, and real-time execution logging.
@@ -11,22 +11,33 @@ This tool is designed to work in two ways:
 ## Key Features
 
 1. **Zero-Dependency AST C++ Parser (Step 0)**: Built entirely in Python. Does not require LLVM/Clang program binaries or DLLs, enabling it to run instantly on any machine with Python installed.
-2. **Flexible Target Header Selection**:
+2. **Flexible Target Header Selection (Step 1)**:
    * **Git Change Detection**: Inspects local repository changes via git status to selectively compile mocks for only changed or added header files.
    * **All Headers Recursively (`--all`)**: Scans the entire project tree to migrate the entire codebase.
    * **Specific File**: Process a single C++ header file directly.
-3. **C++ Standard Auto-Detection**: Automatically searches target project root files (like `CMakeLists.txt`) for compilation markers such as `CMAKE_CXX_STANDARD` or `cxx_std_*` to identify the C++ version (11, 14, 17, 20).
-4. **Advanced Mock Customization**:
-   * **Custom Mock Naming**: Configure mock prefixes and suffixes (e.g., `MockIDatabase` or `IDatabaseStub`).
-   * **No Override Toggle**: Expose option to omit `override` specifiers on generated mocks.
-   * **Namespace Filter**: Limit mocking to classes belonging to a specific namespace (e.g., `sdk::db`).
-   * **Custom Includes**: Prepend additional header files to generated mocks.
-5. **Quality of Life Features**:
-   * **Clang-Format Integration**: Automatically runs `clang-format -i` on generated files if `clang-format` is available on the user's system.
-   * **Dry Run Mode**: Scans, detects, and parses headers but bypasses writing to disk, listing all target paths and projected mock locations.
-6. **Header-Replacement Mocking (Step 2)**:
+3. **Header-Replacement Mocking (Step 2)**:
    * Saves mock header files with the **exact same filename** as original headers, allowing you to swap production dependencies with mock stubs during test compilation using include path order.
    * Class naming flexibility: can generate mocks inheriting from interfaces or type stubs replacing the class definition directly (keeping the identical class name).
+4. **Heuristic Scenario Analysis (Step 3 - bbrainy gtest)**:
+   * Deep-analyzes C++ method implementation bodies using brace-matching algorithms.
+   * Scans for specific branching conditions such as null pointer checks, numeric bounds (negative/zero constraints), and empty string checks.
+   * Synthesizes tailored TestScenarios categorized into Positive, Negative, and Edge Case scenarios.
+5. **GTest & GMock Synthesis (Step 4 - unit test converter)**:
+   * Translates scenario metadata into complete C++ GoogleTest cases structured around the Arrange-Act-Assert pattern.
+   * Generates readable assertions utilizing modern Matchers like `EXPECT_THAT(actual, Eq(expected))`.
+6. **Orchestrator Self-Healing Feedback Loop**:
+   * Auto-detects compiler toolchains (`g++`, `clang++`, `cl`).
+   * Validates generated mock files via syntax-only compile checks.
+   * Corrects compilation errors automatically (e.g. toggles `no_override` if an override mismatch occurs, or recursively locates missing C++ types in other headers and injects them into custom includes).
+7. **C++ Standard Auto-Detection**: Automatically searches target project root files (like `CMakeLists.txt`) for compilation markers such as `CMAKE_CXX_STANDARD` or `cxx_std_*` to identify the C++ version (11, 14, 17, 20).
+8. **Advanced Customization**:
+   * **Custom Mock Naming**: Configure mock prefixes and suffixes (e.g., `MockIDatabase` or `IDatabaseStub`).
+   * **No Override Toggle**: Expose option to omit `override` specifiers on generated mocks.
+   * **Namespace Filter**: Limit mocking/testing to classes belonging to a specific namespace (e.g., `sdk::db`).
+   * **Custom Includes**: Prepend additional header files to generated mocks.
+9. **Quality of Life Features**:
+   * **Clang-Format Integration**: Automatically runs `clang-format -i` on generated files if `clang-format` is available on the user's system.
+   * **Dry Run Mode**: Scans, detects, and parses headers but bypasses writing to disk, listing all target paths and projected mock locations.
 
 ---
 
@@ -142,13 +153,15 @@ gtest_migration_factory/
 │   ├── git_helper.py             # Git status parsing for changed C++ headers
 │   ├── cxx_standard_detector.py  # CMakeLists.txt scanner for C++ versions
 │   ├── lexer.py                  # Comments-stripper & lexical tokenizer
-│   └── cpp_parser.py             # Scope and AST method extractor
+│   ├── cpp_parser.py             # Scope and AST method extractor
+│   └── bbrainy_gtest.py          # Heuristic implementation scan & scenario extractor
 │
 ├── generator/
-│   └── mock_generator.py         # GoogleMock & GTest fixture C++ code generator
+│   ├── mock_generator.py         # GoogleMock & GTest fixture C++ code generator
+│   └── unit_test_converter.py    # Translates scenarios to GTest (Arrange/Act/Assert)
 │
 ├── orchestrator/
-│   └── pipeline.py               # Coordinates file analysis and generator calls
+│   └── pipeline.py               # Coordinates parser, generator, and feedback loop
 │
 ├── gui.py                        # Tkinter dark-themed desktop app
 └── cli.py                        # Command Line parser and launcher wrapper
@@ -264,9 +277,9 @@ python -m unittest discover -s tests
 
 To integrate this tool as a submodule across multiple C++ repositories:
 
-1. Add this repository as a Git Submodule:
+1. Add this repository as a Git Submodule pointing to the `master_integration` branch:
    ```bash
-   git submodule add https://github.com/your-username/AI_GtestTest_migration.git external/gtest_migration_factory
+   git submodule add -b master_integration https://github.com/Adly99/AI_GtestTest_migration.git external/gtest_migration_factory
    ```
 2. Build a python script wrapper or Makefile target in your main C++ project that calls `python -m gtest_migration_factory` before running CMake.
 
@@ -296,3 +309,19 @@ target_link_libraries(my_unit_tests PRIVATE
 )
 ```
 Whenever `test_main.cpp` compiles inside `my_unit_tests`, `#include "IDatabase.h"` resolves to the mock stub header in `generated_mocks` instead of the original header inside `include`.
+
+---
+
+## Branching & Contribution Policy
+
+* **Default Branch**: The default development branch is **`master_integration`**.
+* **Development Flow**:
+  1. For any new feature, fix, or enhancement, always create a **new branch** off of `master_integration`:
+     ```bash
+     git checkout master_integration
+     git pull origin master_integration
+     git checkout -b feature/my-new-feature
+     ```
+  2. Implement changes, verify with unit tests (`python -m unittest discover tests`), and commit the updates to your branch.
+  3. Push the feature branch to GitHub and create a **Pull Request (PR)** against the `master_integration` branch.
+  4. After reviews and checks pass, merge the PR into `master_integration`.
