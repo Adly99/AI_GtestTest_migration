@@ -6,7 +6,7 @@ class Method:
     """Represents a C++ class member function."""
     def __init__(self, name, return_type, params, is_const=False, is_pure_virtual=False, 
                  is_override=False, is_static=False, is_constexpr=False, is_noexcept=False,
-                 preprocessor_guards=None):
+                 preprocessor_guards=None, is_virtual=False, has_body=False, template_decl=None):
         self.name = name
         self.return_type = return_type
         self.params = params  # List of dicts: {"type": str, "name": str, "default": str/None}
@@ -17,15 +17,18 @@ class Method:
         self.is_constexpr = is_constexpr
         self.is_noexcept = is_noexcept
         self.preprocessor_guards = preprocessor_guards if preprocessor_guards is not None else []
+        self.is_virtual = is_virtual
+        self.has_body = has_body
+        self.template_decl = template_decl
 
     def __repr__(self):
         return (f"Method({self.return_type} {self.name}({self.params}) "
-                f"const={self.is_const} pure={self.is_pure_virtual} static={self.is_static} constexpr={self.is_constexpr} noexcept={self.is_noexcept})")
+                f"const={self.is_const} pure={self.is_pure_virtual} static={self.is_static} constexpr={self.is_constexpr} noexcept={self.is_noexcept} virtual={self.is_virtual} has_body={self.has_body})")
 
 class FreeFunction:
     """Represents a C++ free function declared within a namespace."""
     def __init__(self, name, return_type, params, namespace, is_constexpr=False, body_text=None,
-                 preprocessor_guards=None):
+                 preprocessor_guards=None, template_decl=None, has_body=False):
         self.name = name
         self.return_type = return_type
         self.params = params  # List of dicts: {"type": str, "name": str, "default": str/None}
@@ -33,9 +36,11 @@ class FreeFunction:
         self.is_constexpr = is_constexpr
         self.body_text = body_text  # Sliced raw body text for constexpr/inline preservation
         self.preprocessor_guards = preprocessor_guards if preprocessor_guards is not None else []
+        self.template_decl = template_decl
+        self.has_body = has_body
 
     def __repr__(self):
-        return f"FreeFunction({self.return_type} {self.name}({self.params}) constexpr={self.is_constexpr})"
+        return f"FreeFunction({self.return_type} {self.name}({self.params}) constexpr={self.is_constexpr} has_body={self.has_body})"
 
 class Class:
     """Represents a C++ class or struct definition."""
@@ -350,7 +355,8 @@ def parse_header(file_path):
                     
                     if has_paren:
                         # Parse function signature metadata
-                        method_obj = parse_method_signature(statement_tokens, current_class.name, preprocessor_guards=get_guards())
+                        method_obj = parse_method_signature(statement_tokens, current_class.name, preprocessor_guards=get_guards(), template_decl=last_template_decl)
+                        last_template_decl = None
                         if method_obj:
                             if method_obj.is_static:
                                 current_class.static_methods.append(method_obj)
@@ -387,7 +393,8 @@ def parse_header(file_path):
                     if has_paren and not is_special:
                         pos = next_pos
                         ns_name = "::".join(namespace_stack)
-                        func_obj = parse_free_function(statement_tokens, ns_name, file_path, preprocessor_guards=get_guards())
+                        func_obj = parse_free_function(statement_tokens, ns_name, file_path, preprocessor_guards=get_guards(), template_decl=last_template_decl)
+                        last_template_decl = None
                         if func_obj:
                             ast.free_functions.append(func_obj)
                         continue
@@ -410,7 +417,7 @@ def parse_header(file_path):
 
     return ast
 
-def parse_method_signature(tokens, class_name, preprocessor_guards=None):
+def parse_method_signature(tokens, class_name, preprocessor_guards=None, template_decl=None):
     """
     Parses a class member method signature.
     Returns None if signature represents a constructor, destructor, or operator overload.
@@ -516,6 +523,8 @@ def parse_method_signature(tokens, class_name, preprocessor_guards=None):
         elif t.value == "0" and idx > 0 and post_paren[idx - 1].value == "=":
             is_pure_virtual = True
 
+    has_body = any(t.value == "{" for t in post_paren)
+
     return Method(
         name=method_name,
         return_type=return_type if return_type else "void",
@@ -526,10 +535,13 @@ def parse_method_signature(tokens, class_name, preprocessor_guards=None):
         is_static=is_static,
         is_constexpr=is_constexpr,
         is_noexcept=is_noexcept,
-        preprocessor_guards=preprocessor_guards
+        preprocessor_guards=preprocessor_guards,
+        is_virtual=is_virtual,
+        has_body=has_body,
+        template_decl=template_decl
     )
 
-def parse_free_function(tokens, namespace, file_path, preprocessor_guards=None):
+def parse_free_function(tokens, namespace, file_path, preprocessor_guards=None, template_decl=None):
     """
     Parses a C++ free function signature declared inside a namespace.
     """
@@ -607,6 +619,7 @@ def parse_free_function(tokens, namespace, file_path, preprocessor_guards=None):
 
     # Capture the inline/constexpr function body text if present
     body_text = None
+    has_body = False
     if tokens[-1].value == "}":
         # Scan backward or forward to find body start
         brace_open_idx = -1
@@ -618,6 +631,9 @@ def parse_free_function(tokens, namespace, file_path, preprocessor_guards=None):
             start_l = tokens[0].line
             end_l = tokens[-1].line
             body_text = read_source_range(file_path, start_l, end_l)
+            has_body = True
+    elif any(t.value == "{" for t in tokens):
+        has_body = True
 
     return FreeFunction(
         name=func_name,
@@ -626,7 +642,9 @@ def parse_free_function(tokens, namespace, file_path, preprocessor_guards=None):
         namespace=namespace,
         is_constexpr=is_constexpr,
         body_text=body_text,
-        preprocessor_guards=preprocessor_guards
+        preprocessor_guards=preprocessor_guards,
+        template_decl=template_decl,
+        has_body=has_body
     )
 
 def clean_type_spacing(param_type):

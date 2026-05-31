@@ -83,5 +83,33 @@ class TestBBrainyGTest(unittest.TestCase):
         self.assertEqual(neg.scenario_name, "EdgeCase_nameEmpty")
         self.assertTrue(any('name = "";' in decl for decl in neg.arrange_statements))
 
+    def test_analyze_method_body_smart_pointers(self):
+        method = Method("Execute", "void", [
+            {"type": "std::shared_ptr<Database>", "name": "db"},
+            {"type": "std::unique_ptr<Connection>&", "name": "conn"}
+        ])
+        scenarios = analyze_method_body(method)
+        self.assertEqual(len(scenarios), 1)
+        pos = scenarios[0]
+        
+        # db shared_ptr should be make_shared
+        self.assertTrue(any("std::shared_ptr<Database> db = std::make_shared<MockDatabase>();" in decl for decl in pos.arrange_statements))
+        # conn unique_ptr should be make_unique
+        self.assertTrue(any("std::unique_ptr<Connection> conn = std::make_unique<MockConnection>();" in decl for decl in pos.arrange_statements))
+        
+    def test_analyze_method_body_mocked_dependencies(self):
+        method = Method("Process", "bool", [{"type": "Database*", "name": "db"}])
+        body_text = """
+            if (!db) return false;
+            db->query();
+            return true;
+        """
+        scenarios = analyze_method_body(method, body_text)
+        # Should detect 'query' is called on 'db'
+        pos = [s for s in scenarios if s.scenario_name == "Success_DefaultBehavior"][0]
+        self.assertTrue(any("MockDatabase mock_db;" in decl for decl in pos.arrange_statements))
+        self.assertTrue(any("Database* db = &mock_db;" in decl for decl in pos.arrange_statements))
+        self.assertTrue(any("EXPECT_CALL(mock_db, query(::testing::_))" in decl for decl in pos.arrange_statements))
+
 if __name__ == "__main__":
     unittest.main()

@@ -349,5 +349,61 @@ class TestCppParser(unittest.TestCase):
         finally:
             os.remove(tmp_path)
 
+    def test_parse_inline_method_body_and_virtual(self):
+        header_code = """
+        class Controller {
+        public:
+            virtual void Initialize() {
+                doInit();
+            }
+            void Reset() {}
+            virtual void Terminate() = 0;
+        };
+        """
+        with tempfile.NamedTemporaryFile(suffix=".h", delete=False, mode="w", encoding="utf-8") as tmp:
+            tmp.write(header_code)
+            tmp_path = tmp.name
+
+        try:
+            ast = parse_header(tmp_path)
+            c = ast.classes[0]
+            self.assertEqual(len(c.methods), 3)
+            
+            m_init = [m for m in c.methods if m.name == "Initialize"][0]
+            self.assertTrue(m_init.is_virtual)
+            self.assertTrue(m_init.has_body)
+            
+            m_reset = [m for m in c.methods if m.name == "Reset"][0]
+            self.assertFalse(m_reset.is_virtual)
+            self.assertTrue(m_reset.has_body)
+            
+            m_term = [m for m in c.methods if m.name == "Terminate"][0]
+            self.assertTrue(m_term.is_virtual)
+            self.assertFalse(m_term.has_body)
+        finally:
+            os.remove(tmp_path)
+
+    def test_parse_template_methods_and_decl(self):
+        header_code = """
+        class Service {
+        public:
+            template <typename U>
+            void Send(U val);
+        };
+        """
+        with tempfile.NamedTemporaryFile(suffix=".h", delete=False, mode="w", encoding="utf-8") as tmp:
+            tmp.write(header_code)
+            tmp_path = tmp.name
+
+        try:
+            ast = parse_header(tmp_path)
+            c = ast.classes[0]
+            self.assertEqual(len(c.methods), 1)
+            m = c.methods[0]
+            self.assertEqual(m.name, "Send")
+            self.assertEqual(m.template_decl, "template<typename U>")
+        finally:
+            os.remove(tmp_path)
+
 if __name__ == "__main__":
     unittest.main()

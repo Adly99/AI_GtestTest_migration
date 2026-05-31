@@ -379,6 +379,8 @@ def generate_mock_header_from_ast(ast, original_header_name, keep_class_name=Fal
 
             # Mock public instance methods (Step 5)
             for m in cpp_class.methods:
+                if not keep_class_name and getattr(m, "has_body", False) and not (getattr(m, "is_virtual", False) or m.is_pure_virtual or m.is_override):
+                    continue
                 method_lines = []
                 param_decls = []
                 for p in m.params:

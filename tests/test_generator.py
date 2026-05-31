@@ -249,5 +249,25 @@ class TestMockGenerator(unittest.TestCase):
         self.assertIn("#if SECURITY_LEVEL > 1", output)
         self.assertIn("#endif // ENABLE_GUARD", output)
 
+    def test_generate_mock_header_skip_inline_non_virtual(self):
+        t_class = Class("Service", "sdk")
+        # Virtual inline method
+        t_class.methods.append(Method("Initialize", "void", [], is_virtual=True, has_body=True))
+        # Non-virtual inline method
+        t_class.methods.append(Method("Run", "void", [], is_virtual=False, has_body=True))
+        
+        ast = CppHeaderAST()
+        ast.classes.append(t_class)
+        
+        # Scenario A: inheritance mode (keep_class_name=False) -> Skip Run, Keep Initialize
+        output_inh = generate_mock_header_from_ast(ast, "Service.h", keep_class_name=False)
+        self.assertIn("MOCK_METHOD(void, Initialize", output_inh)
+        self.assertNotIn("MOCK_METHOD(void, Run", output_inh)
+        
+        # Scenario B: swap-link mode (keep_class_name=True) -> Keep both Run and Initialize
+        output_swap = generate_mock_header_from_ast(ast, "Service.h", keep_class_name=True)
+        self.assertIn("MOCK_METHOD(void, Initialize", output_swap)
+        self.assertIn("MOCK_METHOD(void, Run", output_swap)
+
 if __name__ == "__main__":
     unittest.main()

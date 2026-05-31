@@ -519,6 +519,13 @@ class GTestMigrationGUI:
         )
         self.gtest_cmake_btn.pack(side=tk.LEFT, padx=5)
 
+        self.gtest_wsl_install_btn = ttk.Button(
+            gtest_btns_frame,
+            text="Install WSL Prerequisites",
+            command=self.start_wsl_install
+        )
+        self.gtest_wsl_install_btn.pack(side=tk.LEFT, padx=5)
+
         # Bottom Frame: Log textbox
         gtest_bottom_frame = ttk.Frame(gtest_build_frame)
         gtest_bottom_frame.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
@@ -649,6 +656,7 @@ class GTestMigrationGUI:
             self.preview_text.configure(state='normal')
             self.preview_text.delete(1.0, tk.END)
             self.preview_text.insert(tk.END, mock_content)
+            self.apply_cpp_highlighting(self.preview_text)
             self.preview_text.configure(state='disabled')
             
         except Exception as e:
@@ -656,6 +664,60 @@ class GTestMigrationGUI:
             self.preview_text.delete(1.0, tk.END)
             self.preview_text.insert(tk.END, f"Failed to generate preview: {e}")
             self.preview_text.configure(state='disabled')
+
+    def apply_cpp_highlighting(self, text_widget):
+        # Remove all previous tags
+        for tag in ["keyword", "comment", "string", "type", "preprocessor"]:
+            text_widget.tag_remove(tag, "1.0", tk.END)
+            
+        content = text_widget.get("1.0", tk.END)
+        
+        # Configure tag colors matching Dracula theme / Dark modern theme
+        text_widget.tag_config("keyword", foreground="#FF79C6", font=("Consolas", 10, "bold")) # Pink
+        text_widget.tag_config("comment", foreground="#6272A4", font=("Consolas", 10, "italic")) # Grey-blue
+        text_widget.tag_config("string", foreground="#F1FA8C") # Yellow
+        text_widget.tag_config("type", foreground="#8BE9FD") # Cyan
+        text_widget.tag_config("preprocessor", foreground="#FF5555") # Red
+        
+        import re
+        
+        # Tag comments
+        for match in re.finditer(r'//[^\n]*|/\*.*?\*/', content, re.DOTALL):
+            start_idx = text_widget.index(f"1.0 + {match.start()} chars")
+            end_idx = text_widget.index(f"1.0 + {match.end()} chars")
+            text_widget.tag_add("comment", start_idx, end_idx)
+            
+        # Tag strings
+        for match in re.finditer(r'"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\'', content):
+            start_idx = text_widget.index(f"1.0 + {match.start()} chars")
+            end_idx = text_widget.index(f"1.0 + {match.end()} chars")
+            if "comment" not in text_widget.tag_names(start_idx):
+                text_widget.tag_add("string", start_idx, end_idx)
+                
+        # Tag preprocessor
+        for match in re.finditer(r'#[a-zA-Z]+[^\n]*', content):
+            start_idx = text_widget.index(f"1.0 + {match.start()} chars")
+            end_idx = text_widget.index(f"1.0 + {match.end()} chars")
+            if "comment" not in text_widget.tag_names(start_idx) and "string" not in text_widget.tag_names(start_idx):
+                text_widget.tag_add("preprocessor", start_idx, end_idx)
+                
+        # Tag keywords
+        keywords = [
+            r'\bclass\b', r'\bstruct\b', r'\bvirtual\b', r'\boverride\b', r'\bconst\b', 
+            r'\bpublic\b', r'\bprivate\b', r'\bprotected\b', r'\bstatic\b', r'\bvoid\b', 
+            r'\bint\b', r'\bdouble\b', r'\bfloat\b', r'\bbool\b', r'\binline\b', 
+            r'\bconstexpr\b', r'\bnoexcept\b', r'\busing\b', r'\bnamespace\b', 
+            r'\btemplate\b', r'\btypename\b', r'\breturn\b', r'\btypedef\b', r'\bexplicit\b',
+            r'\bTEST_F\b', r'\bEXPECT_THAT\b', r'\bEXPECT_CALL\b', r'\bMOCK_METHOD\b',
+            r'\bEq\b', r'\bNe\b', r'\bLt\b', r'\bGt\b', r'\bLe\b', r'\bGe\b'
+        ]
+        keyword_pattern = "|".join(keywords)
+        for match in re.finditer(keyword_pattern, content):
+            start_idx = text_widget.index(f"1.0 + {match.start()} chars")
+            end_idx = text_widget.index(f"1.0 + {match.end()} chars")
+            tags = text_widget.tag_names(start_idx)
+            if not any(t in tags for t in ["comment", "string", "preprocessor"]):
+                text_widget.tag_add("keyword", start_idx, end_idx)
 
     # ----------------------------------------------------
     # EXECUTION PIPELINE
@@ -908,6 +970,73 @@ class GTestMigrationGUI:
         except Exception as e:
             self.append_gtest_log(f"[Error]: {e}\n")
 
+    def start_wsl_install(self):
+        import threading
+        thread = threading.Thread(target=self.run_wsl_install)
+        thread.daemon = True
+        thread.start()
+
+    def run_wsl_install(self):
+        import subprocess
+        
+        self.run_button.configure(state="disabled")
+        self.preview_button.configure(state="disabled")
+        self.gtest_checkout_btn.configure(state="disabled")
+        self.gtest_build_btn.configure(state="disabled")
+        self.gtest_cmake_btn.configure(state="disabled")
+        self.gtest_wsl_install_btn.configure(state="disabled")
+        
+        self.gtest_log_text.configure(state='normal')
+        self.gtest_log_text.delete(1.0, tk.END)
+        self.gtest_log_text.configure(state='disabled')
+        
+        try:
+            self.append_gtest_log("[GTest Builder] Launching WSL prerequisites installation as root...\n")
+            
+            # Step 1: apt-get update
+            cmd_update = ["wsl", "-u", "root", "apt-get", "update"]
+            self.append_gtest_log(f"Running: {' '.join(cmd_update)}\n")
+            proc_up = subprocess.Popen(
+                cmd_update,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            for line in proc_up.stdout:
+                self.append_gtest_log(line)
+            proc_up.wait()
+            
+            # Step 2: apt-get install cmake build-essential
+            cmd_inst = ["wsl", "-u", "root", "apt-get", "install", "-y", "cmake", "build-essential"]
+            self.append_gtest_log(f"\nRunning: {' '.join(cmd_inst)}\n")
+            proc_inst = subprocess.Popen(
+                cmd_inst,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            for line in proc_inst.stdout:
+                self.append_gtest_log(line)
+            proc_inst.wait()
+            
+            if proc_inst.returncode == 0:
+                self.append_gtest_log("\n[GTest Builder] WSL prerequisites installed successfully! You can now build GoogleTest.\n")
+            else:
+                self.append_gtest_log(f"\n[GTest Builder Error] Installation failed with exit code {proc_inst.returncode}.\n")
+                
+        except Exception as e:
+            self.append_gtest_log(f"\n[GTest Builder Error] Exception occurred: {e}\n")
+            
+        finally:
+            self.run_button.configure(state="normal")
+            self.preview_button.configure(state="normal")
+            self.gtest_checkout_btn.configure(state="normal")
+            self.gtest_build_btn.configure(state="normal")
+            self.gtest_cmake_btn.configure(state="normal")
+            self.gtest_wsl_install_btn.configure(state="normal")
+
     def start_gtest_build(self):
         import threading
         thread = threading.Thread(target=self.run_gtest_build)
@@ -922,6 +1051,7 @@ class GTestMigrationGUI:
         self.gtest_checkout_btn.configure(state="disabled")
         self.gtest_build_btn.configure(state="disabled")
         self.gtest_cmake_btn.configure(state="disabled")
+        self.gtest_wsl_install_btn.configure(state="disabled")
         
         self.gtest_log_text.configure(state='normal')
         self.gtest_log_text.delete(1.0, tk.END)
@@ -1044,6 +1174,7 @@ class GTestMigrationGUI:
             self.gtest_checkout_btn.configure(state="normal")
             self.gtest_build_btn.configure(state="normal")
             self.gtest_cmake_btn.configure(state="normal")
+            self.gtest_wsl_install_btn.configure(state="normal")
 
     def generate_gtest_cmake(self):
         self.gtest_log_text.configure(state='normal')
