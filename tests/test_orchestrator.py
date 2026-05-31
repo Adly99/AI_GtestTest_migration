@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 import tempfile
 import os
 import shutil
@@ -116,6 +117,43 @@ class TestOrchestrator(unittest.TestCase):
         self.assertFalse(os.path.exists(fresh_output_dir))
         # The list of files that would be generated is still populated in the returned result
         self.assertTrue(len(result["generated_files"]) > 0)
+
+    @unittest.mock.patch("subprocess.run")
+    def test_pipeline_self_healing_feedback_loop_override(self, mock_run):
+        # Configure mock_run to:
+        # 1. Return g++ version successfully (compiler detection)
+        # 2. Return compilation failure with "marked 'override' but does not override" on first check
+        # 3. Return compilation success on the second check (after self-healing)
+        
+        mock_version = unittest.mock.MagicMock()
+        mock_version.returncode = 0
+        
+        mock_fail = unittest.mock.MagicMock()
+        mock_fail.returncode = 1
+        mock_fail.stderr = "error: 'Deposit' marked 'override' but does not override"
+        
+        mock_success = unittest.mock.MagicMock()
+        mock_success.returncode = 0
+        
+        mock_run.side_effect = [mock_version, mock_fail, mock_success]
+        
+        header_path = os.path.join(self.project_root, "Account.h")
+        header_content = "class Account { public: virtual bool Deposit(double amount) = 0; };"
+        with open(header_path, "w", encoding="utf-8") as f:
+            f.write(header_content)
+            
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=self.output_dir,
+            file_path=header_path,
+            verify_compile=True,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        
+        # Verify that mock_run was called 3 times (version check, check 1 (fail), check 2 (success))
+        self.assertEqual(mock_run.call_count, 3)
 
     def test_run_pipeline_with_cpp_source(self):
         # Create a header file and corresponding implementation file in the project

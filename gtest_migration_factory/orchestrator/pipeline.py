@@ -164,6 +164,97 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
                 print(f"    -> [Dry Run] Would generate Mock Header: {mock_hdr_path}")
         generated_files.append(mock_hdr_path)
 
+        # 4.1. Run syntax verification check with self-healing feedback loop (Phase 1, Step 1)
+        if verify_compile and not dry_run:
+            import subprocess
+            import re
+            compiler = None
+            for c in ("g++", "clang++", "cl"):
+                try:
+                    subprocess.run([c, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    compiler = c
+                    break
+                except FileNotFoundError:
+                    continue
+            
+            if compiler:
+                def run_verify(path):
+                    cmd = [compiler, "-fsyntax-only", "-std=c++17", f"-I{project_root}", f"-I{output_dir}", path]
+                    if compiler == "cl":
+                        cmd = ["cl", "/Zs", f"/I{project_root}", f"/I{output_dir}", path]
+                    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                res = run_verify(mock_hdr_path)
+                if res.returncode != 0:
+                    err_text = res.stderr
+                    healed = False
+                    healed_no_override = no_override
+                    healed_custom_includes = list(custom_includes) if isinstance(custom_includes, list) else ([c.strip() for c in custom_includes.split(",") if c.strip()] if custom_includes else [])
+
+                    if "override" in err_text.lower() and not no_override:
+                        if verbose:
+                            print(f"[Orchestrator Feedback Loop] Compiler error in {basename} related to 'override'. Retrying with no_override=True...")
+                        healed_no_override = True
+                        healed = True
+
+                    # Try to locate missing types (e.g. unknown type name 'X')
+                    missing_type_match = re.search(r'(?:unknown type name|does not name a type|has not been declared|is not a class or namespace)\s+[\'"]?([a-zA-Z0-9_]+)[\'"]?', err_text)
+                    if missing_type_match:
+                        missing_type = missing_type_match.group(1)
+                        if verbose:
+                            print(f"[Orchestrator Feedback Loop] Compiler flagged missing type '{missing_type}'. Scanning project for defining headers...")
+                        
+                        found_header = None
+                        for root, _, files in os.walk(project_root):
+                            for f in files:
+                                if f.lower().endswith(header_exts) and f != basename:
+                                    f_path = os.path.join(root, f)
+                                    try:
+                                        with open(f_path, "r", encoding="utf-8", errors="ignore") as fh:
+                                            f_content = fh.read()
+                                            if re.search(r'\b(class|struct)\s+' + re.escape(missing_type) + r'\b', f_content):
+                                                found_header = f
+                                                break
+                                    except Exception:
+                                        pass
+                            if found_header:
+                                break
+                        
+                        if found_header:
+                            if verbose:
+                                print(f"[Orchestrator Feedback Loop] Found defining header '{found_header}' for type '{missing_type}'. Injecting custom include...")
+                            healed_custom_includes.append(f'"{found_header}"')
+                            healed = True
+
+                    if healed:
+                        mock_hdr_content = generate_mock_header_from_ast(
+                            ast, 
+                            basename, 
+                            keep_class_name=keep_class_name,
+                            mock_prefix=mock_prefix,
+                            mock_suffix=mock_suffix,
+                            no_override=healed_no_override,
+                            custom_includes=healed_custom_includes,
+                            namespace_filter=namespace_filter
+                        )
+                        with open(mock_hdr_path, "w", encoding="utf-8") as f:
+                            f.write(mock_hdr_content)
+                        
+                        res2 = run_verify(mock_hdr_path)
+                        if res2.returncode == 0:
+                            if verbose:
+                                print(f"  - Syntax OK after self-healing feedback loop: {basename}")
+                        else:
+                            print(f"[Warning] Self-healing could not fully resolve syntax issues in {basename}. Compiler output:\n{res2.stderr}", file=sys.stderr)
+                    else:
+                        print(f"[Warning] Syntax errors in generated mock {basename}. No self-healing pattern matched. Compiler output:\n{err_text}", file=sys.stderr)
+                else:
+                    if verbose:
+                        print(f"  - Syntax OK: {basename}")
+            else:
+                if verbose:
+                    print("[Orchestrator] No compiler (g++, clang++, cl) found on PATH. Skipping syntax verification.")
+
         # B. Generate test fixtures for each class defined in the header
         for cpp_class in ast.classes:
             # Respect namespace filter for test fixtures
@@ -246,40 +337,8 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
         except Exception as e:
             print(f"[Warning] Failed to write GeneratedMocks.cmake: {e}", file=sys.stderr)
 
-    # 7. Optional compiler verification check
-    if verify_compile and not dry_run and generated_files:
-        if verbose:
-            print("[Orchestrator] Running syntax compilation check on generated mock headers...")
-        import subprocess
-        compiler = None
-        for c in ("g++", "clang++", "cl"):
-            try:
-                subprocess.run([c, "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                compiler = c
-                break
-            except FileNotFoundError:
-                continue
-                
-        if compiler:
-            if verbose:
-                print(f"[Orchestrator] Using compiler: {compiler} for verification")
-            headers_to_check = [f for f in generated_files if not os.path.basename(f).startswith("test_") and f.endswith(header_exts)]
-            for hdr in headers_to_check:
-                try:
-                    cmd = [compiler, "-fsyntax-only", "-std=c++17", f"-I{project_root}", f"-I{output_dir}", hdr]
-                    if compiler == "cl":
-                        cmd = ["cl", "/Zs", f"/I{project_root}", f"/I{output_dir}", hdr]
-                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if result.returncode == 0:
-                        if verbose:
-                            print(f"  - Syntax OK: {os.path.basename(hdr)}")
-                    else:
-                        print(f"[Warning] Syntax errors in generated mock {os.path.basename(hdr)}:\n{result.stderr}", file=sys.stderr)
-                except Exception as e:
-                    print(f"[Warning] Verification compile failed for {os.path.basename(hdr)}: {e}", file=sys.stderr)
-        else:
-            if verbose:
-                print("[Orchestrator] No compiler (g++, clang++, cl) found on PATH. Skipping syntax verification.")
+    # 7. Optional compiler verification check (handled inline during mock generation)
+    pass
 
     return {
         "status": "success",
