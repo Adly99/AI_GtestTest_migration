@@ -50,8 +50,13 @@ def run_pipeline(project_root, output_dir, file_path=None, cxx_standard=None,
     exclude_list = []
     if exclude_patterns:
         exclude_list = [p.strip() for p in exclude_patterns.split(",") if p.strip()]
-        if verbose:
-            print(f"[Orchestrator] Exclude patterns: {exclude_list}")
+
+    # Automatically exclude output directory if it lies inside project root
+    if output_dir.startswith(project_root):
+        exclude_list.append(output_dir.replace("\\", "/"))
+
+    if verbose and exclude_list:
+        print(f"[Orchestrator] Exclude patterns: {exclude_list}")
 
     def is_excluded(path):
         normalized_path = os.path.abspath(path).replace("\\", "/").lower()

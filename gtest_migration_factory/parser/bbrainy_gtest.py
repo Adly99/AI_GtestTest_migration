@@ -50,15 +50,39 @@ def extract_method_body(cpp_content, class_name, method_name):
     return None
 
 def get_default_val_for_type(p_type):
-    if "string" in p_type:
+    # Remove const and references to check the base type
+    clean = p_type.replace("const", "").replace("&", "").strip()
+    if "string" in clean:
         return '"test_val"'
     elif "*" in p_type:
         return "nullptr"
-    elif "bool" in p_type:
+    elif "bool" in clean:
         return "true"
-    elif any(t in p_type for t in ("int", "double", "float", "size_t", "int32_t", "uint32_t")):
+    elif any(t in clean for t in ("int", "double", "float", "size_t", "int32_t", "uint32_t")):
         return "10"
-    return "0"
+    return None
+
+def generate_arg_declaration(p_type, p_name, override_val=None):
+    # Determine base default value
+    if override_val is not None:
+        default_val = override_val
+    else:
+        default_val = get_default_val_for_type(p_type)
+        
+    if default_val is not None:
+        if "&" in p_type:
+            clean_type = p_type.replace("&", "").strip()
+            return f"{clean_type} {p_name} = {default_val};", p_name
+        else:
+            return f"{p_type} {p_name} = {default_val};", p_name
+    else:
+        if "&" in p_type:
+            clean_type = p_type.replace("&", "").strip()
+            return f"{clean_type}* {p_name} = nullptr;", f"*{p_name}"
+        elif "*" in p_type:
+            return f"{p_type} {p_name} = nullptr;", p_name
+        else:
+            return f"{p_type} {p_name};", p_name
 
 def get_type_default_assert_value(ret_type):
     if "bool" in ret_type:
@@ -92,15 +116,9 @@ def analyze_method_body(method, body_text=None):
     for idx, p in enumerate(method.params):
         p_name = p.get("name") or f"arg{idx}"
         p_type = p.get("type", "")
-        
-        default_val = get_default_val_for_type(p_type)
-        if default_val is not None:
-            arrange_decls.append(f"{p_type} {p_name} = {default_val};")
-            act_args.append(p_name)
-        else:
-            clean_type = p_type.replace("&", "").strip()
-            arrange_decls.append(f"{clean_type} {p_name};")
-            act_args.append(p_name)
+        decl, expr = generate_arg_declaration(p_type, p_name)
+        arrange_decls.append(decl)
+        act_args.append(expr)
             
     args_str = ", ".join(act_args)
     ret_type = method.return_type
@@ -136,10 +154,11 @@ def analyze_method_body(method, body_text=None):
                         op_name = op.get("name") or f"arg{i}"
                         op_type = op.get("type", "")
                         if i == idx:
-                            neg_arrange.append(f"{op_type} {op_name} = nullptr;")
+                            decl, expr = generate_arg_declaration(op_type, op_name, override_val="nullptr")
                         else:
-                            neg_arrange.append(f"{op_type} {op_name} = {get_default_val_for_type(op_type)};")
-                        neg_args.append(op_name)
+                            decl, expr = generate_arg_declaration(op_type, op_name)
+                        neg_arrange.append(decl)
+                        neg_args.append(expr)
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
                     neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify side effects of null handler"]
@@ -166,10 +185,11 @@ def analyze_method_body(method, body_text=None):
                         op_name = op.get("name") or f"arg{i}"
                         op_type = op.get("type", "")
                         if i == idx:
-                            neg_arrange.append(f"{op_type} {op_name} = 0;")
+                            decl, expr = generate_arg_declaration(op_type, op_name, override_val="0")
                         else:
-                            neg_arrange.append(f"{op_type} {op_name} = {get_default_val_for_type(op_type)};")
-                        neg_args.append(op_name)
+                            decl, expr = generate_arg_declaration(op_type, op_name)
+                        neg_arrange.append(decl)
+                        neg_args.append(expr)
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
                     neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify edge case behavior"]
@@ -196,10 +216,11 @@ def analyze_method_body(method, body_text=None):
                         op_name = op.get("name") or f"arg{i}"
                         op_type = op.get("type", "")
                         if i == idx:
-                            neg_arrange.append(f"{op_type} {op_name} = \"\";")
+                            decl, expr = generate_arg_declaration(op_type, op_name, override_val='""')
                         else:
-                            neg_arrange.append(f"{op_type} {op_name} = {get_default_val_for_type(op_type)};")
-                        neg_args.append(op_name)
+                            decl, expr = generate_arg_declaration(op_type, op_name)
+                        neg_arrange.append(decl)
+                        neg_args.append(expr)
                     
                     neg_act = f"{ret_type} actual = mock_instance.{method.name}({', '.join(neg_args)});" if ret_type != "void" else f"mock_instance.{method.name}({', '.join(neg_args)});"
                     neg_assert = [f"EXPECT_THAT(actual, Eq({get_type_failure_assert_value(ret_type)}));"] if ret_type != "void" else ["// Verify empty string behavior"]

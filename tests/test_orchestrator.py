@@ -279,5 +279,28 @@ class TestOrchestrator(unittest.TestCase):
                 found = True
         self.assertTrue(found)
 
+    def test_auto_exclude_output_dir(self):
+        # Create output directory inside project root
+        nested_output_dir = os.path.join(self.project_root, "nested_mocks")
+        os.makedirs(nested_output_dir, exist_ok=True)
+        
+        # Create a header file inside the output directory (which should be excluded)
+        nested_header = os.path.join(nested_output_dir, "ShouldBeExcluded.h")
+        with open(nested_header, "w", encoding="utf-8") as f:
+            f.write("class ShouldBeExcluded { public: virtual void Fail() = 0; };")
+            
+        result = run_pipeline(
+            project_root=self.project_root,
+            output_dir=nested_output_dir,
+            process_all=True,
+            verbose=True
+        )
+        
+        self.assertEqual(result["status"], "success")
+        
+        # Scanned/processed headers should NOT include the header inside nested_output_dir
+        processed_basenames = [os.path.basename(f) for f in result["processed_headers"]]
+        self.assertNotIn("ShouldBeExcluded.h", processed_basenames)
+
 if __name__ == "__main__":
     unittest.main()

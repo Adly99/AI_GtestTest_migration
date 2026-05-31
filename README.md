@@ -136,6 +136,27 @@ public:
 };
 ```
 
+### E. Reference Parameter Binding (Test Fixtures)
+In C++, test cases generated inside the GTest fixture (`.cpp`) files cannot bind literal values (like `0` or `nullptr`) to standard or const references (like `Account&` or `const Transaction&`). The generator detects reference parameter types and automatically applies pointer-dereference declaration stubs:
+```cpp
+// Original Code Signature
+virtual bool transfer(Account& targetAccount, double amount) = 0;
+
+// Generated Test Fixture Case
+TEST_F(AccountTest, transfer_Success_DefaultBehavior) {
+    // Arrange
+    Account* targetAccount = nullptr;
+    double amount = 10;
+    bank::MockAccount mock_instance;
+
+    // Act
+    bool actual = mock_instance.transfer(*targetAccount, amount);
+
+    // Assert
+    EXPECT_THAT(actual, Eq(true));
+}
+```
+
 ---
 
 ## Directory Structure
