@@ -967,13 +967,15 @@ class GTestMigrationGUI:
                 cmd_conf = ["cmake", "-S", gtest_path, "-B", build_dir, f"-DCMAKE_CXX_STANDARD={cxx_std}"]
                 cmd_build = ["cmake", "--build", build_dir, "--config", "Release"]
             else:  # WSL
-                cmd_conf = ["wsl", "cmake", "-S", "googletest", "-B", "googletest/build_wsl", f"-DCMAKE_CXX_STANDARD={cxx_std}"]
-                cmd_build = ["wsl", "cmake", "--build", "googletest/build_wsl", "--config", "Release"]
+                # Clean up previous build directory in /tmp to ensure a fresh, correct standard configuration
+                subprocess.run(["wsl", "rm", "-rf", "/tmp/googletest_build_wsl"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                cmd_conf = ["wsl", "cmake", "-S", "googletest", "-B", "/tmp/googletest_build_wsl", f"-DCMAKE_CXX_STANDARD={cxx_std}"]
+                cmd_build = ["wsl", "cmake", "--build", "/tmp/googletest_build_wsl", "--config", "Release"]
                 
             self.append_gtest_log(f"Command 1: {' '.join(cmd_conf)}\n")
             proc_conf = subprocess.Popen(
                 cmd_conf,
-                cwd=os.getcwd() if env_choice == "WSL" else None,
+                cwd=os.getcwd() if env_choice.startswith("WSL") else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -985,19 +987,23 @@ class GTestMigrationGUI:
             
             if proc_conf.returncode != 0:
                 if proc_conf.returncode == 127:
-                    if env_choice == "WSL (Linux)":
+                    if env_choice.startswith("WSL"):
                         self.append_gtest_log("\n[Troubleshooting Tip] It seems 'cmake' is not installed in your WSL environment.\n"
                                              "You can install it inside WSL by opening your WSL terminal and running:\n"
                                              "  sudo apt-get update && sudo apt-get install cmake build-essential\n")
                     else:
                         self.append_gtest_log("\n[Troubleshooting Tip] It seems 'cmake' is not installed or not in your Windows system PATH.\n"
                                              "Please verify that CMake is installed and added to your system environment variables.\n")
+                else:
+                    if env_choice.startswith("WSL"):
+                        self.append_gtest_log("\n[Troubleshooting Tip] If CMake configuration failed, ensure you have build-essential/g++ installed in WSL:\n"
+                                             "  sudo apt-get update && sudo apt-get install build-essential\n")
                 raise RuntimeError(f"CMake configuration failed with exit code {proc_conf.returncode}")
                 
             self.append_gtest_log(f"\nCommand 2: {' '.join(cmd_build)}\n")
             proc_build = subprocess.Popen(
                 cmd_build,
-                cwd=os.getcwd() if env_choice == "WSL" else None,
+                cwd=os.getcwd() if env_choice.startswith("WSL") else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -1010,7 +1016,24 @@ class GTestMigrationGUI:
             if proc_build.returncode != 0:
                 raise RuntimeError(f"CMake build failed with exit code {proc_build.returncode}")
                 
-            self.append_gtest_log("\n[GTest Builder] GoogleTest built successfully! Libraries are available inside the build folder.\n")
+            if env_choice.startswith("WSL"):
+                # Copy the built libraries back from /tmp/googletest_build_wsl/lib to googletest/build_wsl/lib
+                self.append_gtest_log("\n[GTest Builder] Copying built library files back to project workspace...\n")
+                copy_cmd = ["wsl", "sh", "-c", "mkdir -p googletest/build_wsl/lib && cp -r /tmp/googletest_build_wsl/lib/* googletest/build_wsl/lib/"]
+                self.append_gtest_log(f"Copy Command: {' '.join(copy_cmd)}\n")
+                proc_copy = subprocess.run(
+                    copy_cmd,
+                    cwd=os.getcwd(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                if proc_copy.returncode != 0:
+                    self.append_gtest_log(f"[Warning] Failed to copy build artifacts: {proc_copy.stderr}\n")
+                else:
+                    self.append_gtest_log("[GTest Builder] WSL GoogleTest built libraries copied to googletest/build_wsl/lib successfully!\n")
+            else:
+                self.append_gtest_log("\n[GTest Builder] GoogleTest built successfully! Libraries are available inside the build folder.\n")
             
         except Exception as ex:
             self.append_gtest_log(f"\n[GTest Builder Error]: {ex}\n")
