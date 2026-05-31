@@ -32,6 +32,10 @@ This tool is designed to work in two ways:
     * **Custom Toolchain Binary Paths**: Set custom paths for compiler binaries (e.g., specific `g++` or `cl` paths) for syntax/verify checks, and custom `clang-format` binaries. Settings are automatically saved/loaded in the desktop GUI's `.gtest_factory_config.json`.
     * **Duplicate Filename Warnings**: Proactively scans the target repository for duplicate C++ header names in different folders and warns the user about overwrite risks, with automated suggestions for folders to add to Exclude Patterns (e.g., `build`, `out`).
     * **Execution Dashboard Summary**: Displays a unified metrics summary (Scanned headers, Generated mocks, Generated fixtures, Skipped empty, Filename clashes) both on the command line terminal and inside a visual panel in the Tkinter desktop GUI.
+8. **Integrated GoogleTest Builder**:
+    * A dedicated GUI tab to download/checkout the exact GoogleTest version (v1.12.1, v1.16.0, v1.17.0) compatible with your target C++ standard.
+    * Automatically compile and build the static testing libraries using a localized sandbox directory (`/tmp`) under WSL (Linux) or Windows CMD (MSVC) environments, outputting `.a` or `.lib` static artifacts directly back to the project workspace directory.
+    * Generates ready-to-copy `FetchContent` CMake config templates tailored to the C++ standard version mapping.
 
 ---
 
@@ -279,7 +283,21 @@ python -m gtest_migration_factory --output-dir <path_to_save_mocks> [options]
 
 ---
 
-### 3. Running Unit Tests
+### 3. Integrated GoogleTest Builder (GUI Feature)
+
+The desktop GUI includes a dedicated **GoogleTest Builder** tab to download and compile GoogleTest libraries directly for your toolchain without manual scripting.
+
+#### Features:
+1. **Auto-Detect C++ Compatibility**: Automatically checks out the release tag and commit matching the selected C++ standard (C++11: `release-1.12.1`, C++14: `v1.16.0`, C++17/C++20: `v1.17.0`).
+2. **Flexible Build Environments**:
+   * **Windows CMD**: Build GoogleTest using local Visual Studio / MSVC compile tools to generate native `.lib` files.
+   * **WSL (Linux)**: Builds GoogleTest under WSL to generate Linux-compatible `.a` static libraries. To prevent "Operation not permitted" mount errors on Windows filesystems, compiling is run in a isolated `/tmp/googletest_build_wsl` directory inside the Linux partition and successfully copied back to the workspace.
+3. **Troubleshooting Tooltip Suggestions**: If compilation fails due to missing dependencies (like `cmake` or `build-essential/g++` inside WSL), the builder prints detailed instructions to help install the package dependencies.
+4. **FetchContent Generator**: Generates a custom CMake FetchContent snippet mapping the detected standards to tag commits, which is copied to the clipboard for direct inclusion in `CMakeLists.txt`.
+
+---
+
+### 4. Running Unit Tests
 
 To run the factory's own test suite and verify parsing, standard detection, and generation:
 
